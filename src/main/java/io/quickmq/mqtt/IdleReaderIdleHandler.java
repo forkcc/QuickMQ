@@ -1,4 +1,4 @@
-package io.quickmq.mqtt.event;
+package io.quickmq.mqtt;
 
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.handler.timeout.IdleState;

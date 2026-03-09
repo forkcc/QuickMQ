@@ -1,4 +1,4 @@
-package io.quickmq.mqtt.topic;
+package io.quickmq.mqtt.subscription;
 
 import java.util.Map;
 
@@ -44,6 +44,9 @@ public final class MqttTopicMatcher {
             fi = next[0];
             ti = next[1];
         }
-        return (fi == flen && ti == tlen) || (fi == flen - 1 && filter.charAt(fi) == '#');
+        if (fi == flen && ti == tlen) return true;
+        if (fi == flen - 1 && filter.charAt(fi) == '#') return true;
+        if (fi == flen - 2 && ti == tlen && filter.charAt(fi) == '/' && filter.charAt(fi + 1) == '#') return true;
+        return false;
     }
 }

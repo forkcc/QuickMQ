@@ -1,4 +1,4 @@
-package io.quickmq.mqtt.topic;
+package io.quickmq.mqtt.subscription;
 
 /**
  * 主题过滤符单字符匹配策略：根据当前字符推进 filter/topic 下标。

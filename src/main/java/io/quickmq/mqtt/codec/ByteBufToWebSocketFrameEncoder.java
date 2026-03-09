@@ -1,4 +1,4 @@
-package io.quickmq.mqtt.ws;
+package io.quickmq.mqtt.codec;
 
 import io.netty.buffer.ByteBuf;
 import io.netty.channel.ChannelHandlerContext;

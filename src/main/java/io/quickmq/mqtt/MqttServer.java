@@ -1,22 +1,22 @@
 package io.quickmq.mqtt;
 
 import io.netty.bootstrap.ServerBootstrap;
-import io.netty.channel.Channel;
-import io.netty.channel.ChannelFuture;
-import io.netty.channel.ChannelInitializer;
-import io.netty.channel.EventLoopGroup;
+import io.netty.buffer.PooledByteBufAllocator;
+import io.netty.channel.*;
 import io.netty.channel.nio.NioEventLoopGroup;
 import io.netty.channel.socket.SocketChannel;
-import io.netty.channel.socket.nio.NioServerSocketChannel;
+import io.netty.handler.codec.haproxy.HAProxyMessageDecoder;
 import io.netty.handler.codec.http.HttpObjectAggregator;
 import io.netty.handler.codec.http.HttpServerCodec;
+import io.netty.handler.codec.http.websocketx.WebSocketServerProtocolHandler;
 import io.netty.handler.codec.mqtt.MqttDecoder;
 import io.netty.handler.codec.mqtt.MqttEncoder;
 import io.netty.handler.timeout.IdleStateHandler;
-import io.netty.handler.codec.http.websocketx.WebSocketServerProtocolHandler;
 import io.quickmq.config.MqttProperties;
-import io.quickmq.mqtt.ws.ByteBufToWebSocketFrameEncoder;
-import io.quickmq.mqtt.ws.WebSocketFrameToByteBufDecoder;
+import io.quickmq.mqtt.hook.HookManager;
+import io.quickmq.mqtt.codec.ProxyProtocolHandler;
+import io.quickmq.mqtt.codec.ByteBufToWebSocketFrameEncoder;
+import io.quickmq.mqtt.codec.WebSocketFrameToByteBufDecoder;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
@@ -27,77 +27,147 @@ import java.util.List;
 import java.util.concurrent.TimeUnit;
 
 /**
- * Netty MQTT 服务：支持多 TCP 端口、多 WebSocket 端口。
+ * Netty MQTT 服务：面向百万长连接优化。
+ * <p>
+ * 关键调优点：
+ * <ul>
+ *   <li>SO_RCVBUF / SO_SNDBUF 压至 4KB，100万连接节省约 ~8GB（对比 64KB 默认）</li>
+ *   <li>SO_KEEPALIVE 让 OS 层检测死连接，减少空闲资源占用</li>
+ *   <li>WriteBufferWaterMark 防止慢消费者 OOM</li>
+ *   <li>Epoll 自动检测，减少 fd 集拷贝与唤醒</li>
+ * </ul>
  */
 @Component
 public class MqttServer {
 
     private static final Logger log = LoggerFactory.getLogger(MqttServer.class);
-    private static final int MAX_MQTT_MESSAGE_SIZE = 256 * 1024;
-    private static final int READ_IDLE_SECONDS = 120;
-    private static final int MAX_HTTP_BODY = 65536;
+
+    public static final String IDLE_HANDLER_NAME = "idleStateHandler";
+
+    private static final int BOSS_THREADS = 1;
+    private static final int SO_BACKLOG = 4096;
+
+    /**
+     * 每连接收发缓冲区（字节）。MQTT 控制报文通常很小，4KB 足够。
+     * 100 万连接 × 2 × 4KB = ~8GB，若用默认 64KB 则需 ~128GB。
+     */
+    private static final int SO_RCVBUF = 4096;
+    private static final int SO_SNDBUF = 4096;
+
+    /** Netty 写缓冲水位：低水位 16KB，高水位 64KB。超过高水位 channel.isWritable()=false。 */
+    private static final WriteBufferWaterMark WRITE_WATER_MARK = new WriteBufferWaterMark(16 * 1024, 64 * 1024);
 
     private final MqttBrokerHandler brokerHandler = new MqttBrokerHandler();
     private EventLoopGroup bossGroup;
     private EventLoopGroup workerGroup;
     private final List<Channel> serverChannels = new ArrayList<>();
+    private boolean epollUsed;
 
-    public void start(MqttProperties props) throws InterruptedException {
-        bossGroup = new NioEventLoopGroup(1);
-        workerGroup = new NioEventLoopGroup();
+    public void start(MqttProperties props, HookManager hookManager) throws InterruptedException {
+        brokerHandler.setProperties(props);
+        brokerHandler.setHookManager(hookManager);
+
+        int workers = resolveWorkerThreads();
+        if (EpollHelper.isAvailable()) {
+            bossGroup = EpollHelper.newBossGroup(BOSS_THREADS);
+            workerGroup = EpollHelper.newWorkerGroup(workers);
+            epollUsed = true;
+            log.info("使用 Epoll 传输, workerThreads={}", workers);
+        } else {
+            bossGroup = new NioEventLoopGroup(BOSS_THREADS);
+            workerGroup = new NioEventLoopGroup(workers);
+            epollUsed = false;
+            log.info("使用 NIO 传输, workerThreads={}", workers);
+        }
+
+        int maxMsg = props.getMaxMessageSize();
+        int connectTimeout = props.getConnectTimeoutSeconds();
+        boolean proxyProtocol = props.isProxyProtocol();
 
         List<Integer> tcpPorts = props.resolveTcpPorts();
-        List<Integer> wsPorts = props.resolveWsPorts();
-        String wsPath = props.getWsPath();
-
-        // TCP 端口：共用一个 Bootstrap，每端口 bind 一次
         if (!tcpPorts.isEmpty()) {
-            ServerBootstrap tcpBootstrap = new ServerBootstrap()
-                    .group(bossGroup, workerGroup)
-                    .channel(NioServerSocketChannel.class)
+            ServerBootstrap tcpBootstrap = newBootstrap()
                     .childHandler(new ChannelInitializer<SocketChannel>() {
                         @Override
                         protected void initChannel(SocketChannel ch) {
-                            ch.pipeline()
-                                    .addLast(new IdleStateHandler(READ_IDLE_SECONDS, 0, 0, TimeUnit.SECONDS))
-                                    .addLast(MqttEncoder.INSTANCE)
-                                    .addLast(new MqttDecoder(MAX_MQTT_MESSAGE_SIZE))
+                            var pipeline = ch.pipeline();
+                            if (proxyProtocol) {
+                                pipeline.addLast(new HAProxyMessageDecoder());
+                                pipeline.addLast(new ProxyProtocolHandler());
+                            }
+                            if (connectTimeout > 0) {
+                                pipeline.addLast(IDLE_HANDLER_NAME,
+                                        new IdleStateHandler(connectTimeout, 0, 0, TimeUnit.SECONDS));
+                            }
+                            pipeline.addLast(MqttEncoder.INSTANCE)
+                                    .addLast(new MqttDecoder(maxMsg))
                                     .addLast(brokerHandler);
                         }
                     });
             for (int port : tcpPorts) {
                 ChannelFuture future = tcpBootstrap.bind(port).sync();
                 serverChannels.add(future.channel());
-                log.info("MQTT TCP 已监听端口: {}", port);
+                log.info("MQTT TCP 已监听端口: {}{}", port, proxyProtocol ? " [PROXY protocol]" : "");
             }
         }
 
-        // WebSocket 端口：每端口一个 Bootstrap（便于不同 path 扩展）
+        List<Integer> wsPorts = props.resolveWsPorts();
         if (!wsPorts.isEmpty()) {
-            ServerBootstrap wsBootstrap = new ServerBootstrap()
-                    .group(bossGroup, workerGroup)
-                    .channel(NioServerSocketChannel.class)
+            String wsPath = props.getWsPath();
+            int wsMaxHttpBody = props.getWsMaxHttpBodySize();
+            ServerBootstrap wsBootstrap = newBootstrap()
                     .childHandler(new ChannelInitializer<SocketChannel>() {
                         @Override
                         protected void initChannel(SocketChannel ch) {
-                            ch.pipeline()
-                                    .addLast(new HttpServerCodec())
-                                    .addLast(new HttpObjectAggregator(MAX_HTTP_BODY))
+                            var pipeline = ch.pipeline();
+                            if (proxyProtocol) {
+                                pipeline.addLast(new HAProxyMessageDecoder());
+                                pipeline.addLast(new ProxyProtocolHandler());
+                            }
+                            pipeline.addLast(new HttpServerCodec())
+                                    .addLast(new HttpObjectAggregator(wsMaxHttpBody))
                                     .addLast(new WebSocketServerProtocolHandler(wsPath))
                                     .addLast(new WebSocketFrameToByteBufDecoder())
-                                    .addLast(new IdleStateHandler(READ_IDLE_SECONDS, 0, 0, TimeUnit.SECONDS))
-                                    .addLast(new MqttDecoder(MAX_MQTT_MESSAGE_SIZE))
+                                    .addLast(new ByteBufToWebSocketFrameEncoder());
+                            if (connectTimeout > 0) {
+                                pipeline.addLast(IDLE_HANDLER_NAME,
+                                        new IdleStateHandler(connectTimeout, 0, 0, TimeUnit.SECONDS));
+                            }
+                            pipeline.addLast(new MqttDecoder(maxMsg))
                                     .addLast(MqttEncoder.INSTANCE)
-                                    .addLast(new ByteBufToWebSocketFrameEncoder())
                                     .addLast(brokerHandler);
                         }
                     });
             for (int port : wsPorts) {
                 ChannelFuture future = wsBootstrap.bind(port).sync();
                 serverChannels.add(future.channel());
-                log.info("MQTT WebSocket 已监听端口: {} 路径: {}", port, wsPath);
+                log.info("MQTT WebSocket 已监听端口: {} 路径: {}{}", port, wsPath,
+                        proxyProtocol ? " [PROXY protocol]" : "");
             }
         }
+
+        log.info("Keepalive: default={}s, max={}s, connectTimeout={}s, proxyProtocol={}",
+                props.getDefaultKeepaliveSeconds(), props.getMaxKeepaliveSeconds(),
+                connectTimeout, proxyProtocol);
+    }
+
+    private ServerBootstrap newBootstrap() {
+        return new ServerBootstrap()
+                .group(bossGroup, workerGroup)
+                .channel(EpollHelper.serverChannelClass(epollUsed))
+                .option(ChannelOption.SO_BACKLOG, SO_BACKLOG)
+                .option(ChannelOption.SO_REUSEADDR, true)
+                .childOption(ChannelOption.TCP_NODELAY, true)
+                .childOption(ChannelOption.SO_REUSEADDR, true)
+                .childOption(ChannelOption.SO_KEEPALIVE, true)
+                .childOption(ChannelOption.SO_RCVBUF, SO_RCVBUF)
+                .childOption(ChannelOption.SO_SNDBUF, SO_SNDBUF)
+                .childOption(ChannelOption.WRITE_BUFFER_WATER_MARK, WRITE_WATER_MARK)
+                .childOption(ChannelOption.ALLOCATOR, PooledByteBufAllocator.DEFAULT);
+    }
+
+    private static int resolveWorkerThreads() {
+        return Math.max(1, Runtime.getRuntime().availableProcessors() * 2);
     }
 
     @PreDestroy

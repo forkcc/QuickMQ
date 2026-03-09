@@ -1,53 +1,62 @@
 package io.quickmq.mqtt;
 
-import io.netty.handler.codec.mqtt.MqttConnAckMessage;
-import io.netty.handler.codec.mqtt.MqttConnAckVariableHeader;
-import io.netty.handler.codec.mqtt.MqttConnectReturnCode;
-import io.netty.handler.codec.mqtt.MqttFixedHeader;
-import io.netty.handler.codec.mqtt.MqttMessageFactory;
-import io.netty.handler.codec.mqtt.MqttMessageIdVariableHeader;
-import io.netty.handler.codec.mqtt.MqttMessageType;
-import io.netty.handler.codec.mqtt.MqttQoS;
-import io.netty.handler.codec.mqtt.MqttSubAckMessage;
-import io.netty.handler.codec.mqtt.MqttSubAckPayload;
-import io.netty.handler.codec.mqtt.MqttUnsubAckMessage;
+import io.netty.handler.codec.mqtt.*;
 
 import java.util.List;
 
 /**
- * MQTT 服务端响应构造（CONNACK、PINGRESP 等）。
+ * MQTT 服务端响应工厂。
  */
 public final class MqttResponses {
 
     private MqttResponses() {}
 
     public static MqttConnAckMessage connAck(boolean sessionPresent) {
-        MqttConnAckVariableHeader varHeader = new MqttConnAckVariableHeader(
-                MqttConnectReturnCode.CONNECTION_ACCEPTED,
-                sessionPresent
-        );
-        MqttFixedHeader fixed = new MqttFixedHeader(MqttMessageType.CONNACK, false, MqttQoS.AT_MOST_ONCE, false, 0);
-        return (MqttConnAckMessage) MqttMessageFactory.newMessage(fixed, varHeader, null);
+        return connAck(MqttConnectReturnCode.CONNECTION_ACCEPTED, sessionPresent);
     }
 
-    public static io.netty.handler.codec.mqtt.MqttMessage pingResp() {
+    public static MqttConnAckMessage connAck(MqttConnectReturnCode code, boolean sessionPresent) {
+        MqttFixedHeader fixed = new MqttFixedHeader(MqttMessageType.CONNACK, false, MqttQoS.AT_MOST_ONCE, false, 0);
+        return (MqttConnAckMessage) MqttMessageFactory.newMessage(fixed, new MqttConnAckVariableHeader(code, sessionPresent), null);
+    }
+
+    public static MqttMessage pingResp() {
         return MqttMessageFactory.newMessage(
-                new MqttFixedHeader(MqttMessageType.PINGRESP, false, MqttQoS.AT_MOST_ONCE, false, 0),
-                null,
-                null
-        );
+                new MqttFixedHeader(MqttMessageType.PINGRESP, false, MqttQoS.AT_MOST_ONCE, false, 0), null, null);
     }
 
     public static MqttSubAckMessage subAck(int messageId, List<Integer> grantedQos) {
-        MqttFixedHeader fixed = new MqttFixedHeader(MqttMessageType.SUBACK, false, MqttQoS.AT_MOST_ONCE, false, 0);
-        MqttMessageIdVariableHeader varHeader = MqttMessageIdVariableHeader.from(messageId);
-        MqttSubAckPayload payload = new MqttSubAckPayload(grantedQos);
-        return new MqttSubAckMessage(fixed, varHeader, payload);
+        return new MqttSubAckMessage(
+                new MqttFixedHeader(MqttMessageType.SUBACK, false, MqttQoS.AT_MOST_ONCE, false, 0),
+                MqttMessageIdVariableHeader.from(messageId),
+                new MqttSubAckPayload(grantedQos));
     }
 
     public static MqttUnsubAckMessage unsubAck(int messageId) {
-        MqttFixedHeader fixed = new MqttFixedHeader(MqttMessageType.UNSUBACK, false, MqttQoS.AT_MOST_ONCE, false, 0);
-        MqttMessageIdVariableHeader varHeader = MqttMessageIdVariableHeader.from(messageId);
-        return new MqttUnsubAckMessage(fixed, varHeader, null);
+        return new MqttUnsubAckMessage(
+                new MqttFixedHeader(MqttMessageType.UNSUBACK, false, MqttQoS.AT_MOST_ONCE, false, 0),
+                MqttMessageIdVariableHeader.from(messageId), null);
+    }
+
+    public static MqttMessage pubAck(int messageId) {
+        return newIdMsg(MqttMessageType.PUBACK, MqttQoS.AT_MOST_ONCE, messageId);
+    }
+
+    public static MqttMessage pubRec(int messageId) {
+        return newIdMsg(MqttMessageType.PUBREC, MqttQoS.AT_MOST_ONCE, messageId);
+    }
+
+    public static MqttMessage pubRel(int messageId) {
+        return newIdMsg(MqttMessageType.PUBREL, MqttQoS.AT_LEAST_ONCE, messageId);
+    }
+
+    public static MqttMessage pubComp(int messageId) {
+        return newIdMsg(MqttMessageType.PUBCOMP, MqttQoS.AT_MOST_ONCE, messageId);
+    }
+
+    private static MqttMessage newIdMsg(MqttMessageType type, MqttQoS qos, int messageId) {
+        return MqttMessageFactory.newMessage(
+                new MqttFixedHeader(type, false, qos, false, 0),
+                MqttMessageIdVariableHeader.from(messageId), null);
     }
 }
