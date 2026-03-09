@@ -1,0 +1,25 @@
+# Maven
+target/
+pom.xml.tag
+pom.xml.releaseBackup
+*.jar
+*.war
+!**/src/main/resources/**/*.jar
+
+# IDE
+.idea/
+*.iml
+*.ipr
+*.iws
+.project
+.classpath
+.settings/
+.vscode/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs / 运行时
+*.log
+port-stats.json

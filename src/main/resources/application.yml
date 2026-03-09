@@ -1,0 +1,10 @@
+# QuickMQ - Spring Boot 3 + Netty + Hazelcast 骨架
+# 不启用 web 容器，仅 Netty 监听 MQTT
+spring:
+  main:
+    web-application-type: none
+# MQTT：多 TCP 端口、多 WebSocket 端口
+mqtt:
+  tcp-ports: [ 1885, 1884 ]     # TCP 端口列表，留空则默认 [1883]
+  ws-ports: [ 8083 ]            # WebSocket 端口列表
+  ws-path: /mqtt                 # WebSocket 路径
