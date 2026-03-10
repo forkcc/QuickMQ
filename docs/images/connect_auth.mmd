@@ -1,0 +1,29 @@
+sequenceDiagram
+    participant C as MQTT Client
+    participant N as Netty Pipeline
+    participant H as ConnectHandler
+    participant HM as HookManager
+    participant DB as HSQLDB
+
+    C->>N: TCP/WebSocket 连接
+    Note over N: PROXY Protocol（可选）
+    N->>N: IdleStateHandler（connect-timeout）
+    C->>N: CONNECT 报文
+    N->>H: channelRead(CONNECT)
+    H->>HM: authenticate(ConnectContext)
+    alt auth-url 已配置
+        HM->>HM: HTTP POST（虚拟线程）
+    else Spring Bean
+        HM->>HM: Bean.authenticate()
+    else 默认
+        HM->>HM: AllowAll
+    end
+    HM-->>H: AuthResult
+    alt 认证通过
+        H->>DB: 保存/更新 ClientSession
+        H->>N: 替换 IdleHandler（keepalive×1.5）
+        H-->>C: CONNACK(accepted)
+    else 认证拒绝
+        H-->>C: CONNACK(rejected)
+        H->>N: close()
+    end

@@ -1,0 +1,52 @@
+graph TB
+    subgraph 客户端
+        C1[MQTT Client 1]
+        C2[MQTT Client 2]
+        CN[MQTT Client N]
+    end
+
+    subgraph QuickMQ Broker
+        subgraph Netty 传输层
+            TCP[TCP :1883]
+            WS[WebSocket :8083]
+            PP{PROXY Protocol?}
+        end
+
+        subgraph 协议处理
+            DEC[MqttDecoder / MqttEncoder]
+            IDLE[IdleStateHandler<br/>动态 Keepalive]
+            BH[MqttBrokerHandler<br/>消息类型分发]
+        end
+
+        subgraph 业务层
+            CONN[ConnectHandler<br/>认证 + 会话]
+            PUB[PublishHandler<br/>write/flush 分离]
+            SUB[SubscribeHandler]
+            UNSUB[UnsubscribeHandler]
+            DISC[DisconnectHandler]
+        end
+
+        subgraph 存储层
+            TRIE[(SubscriptionTrie<br/>内存 Trie 索引)]
+            RET[(RetainedStore<br/>Trie 索引)]
+            WILL[(WillStore)]
+            DB[(HSQLDB<br/>JPA 持久化)]
+        end
+
+        subgraph Hook 层
+            HM[HookManager]
+            AUTH{auth-url?}
+            EVT{event-url?}
+            VT[虚拟线程 Executor]
+        end
+    end
+
+    C1 & C2 & CN --> TCP & WS
+    TCP & WS --> PP --> DEC --> IDLE --> BH
+    BH --> CONN & PUB & SUB & UNSUB & DISC
+    CONN --> HM --> AUTH --> VT
+    PUB --> TRIE & RET
+    SUB --> TRIE & RET
+    CONN & DISC --> WILL
+    CONN & SUB --> DB
+    HM --> EVT --> VT
