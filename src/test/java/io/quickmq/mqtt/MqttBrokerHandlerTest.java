@@ -19,7 +19,7 @@ class MqttBrokerHandlerTest {
         MqttProperties props = new MqttProperties();
         props.setHooks(new HookProperties());
         handler.setProperties(props);
-        HookManager hm = new HookManager(props, null, null);
+        HookManager hm = new HookManager(props, null, null, null);
         handler.setHookManager(hm);
         return handler;
     }

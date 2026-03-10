@@ -11,6 +11,8 @@ import io.netty.handler.codec.http.HttpServerCodec;
 import io.netty.handler.codec.http.websocketx.WebSocketServerProtocolHandler;
 import io.netty.handler.codec.mqtt.MqttDecoder;
 import io.netty.handler.codec.mqtt.MqttEncoder;
+import io.netty.handler.ssl.SslContext;
+import io.netty.handler.ssl.SslHandler;
 import io.netty.handler.timeout.IdleStateHandler;
 import io.quickmq.config.MqttProperties;
 import io.quickmq.mqtt.hook.HookManager;
@@ -62,11 +64,14 @@ public class MqttServer {
     private EventLoopGroup workerGroup;
     private final List<Channel> serverChannels = new ArrayList<>();
     private boolean epollUsed;
+    private SslContextFactory sslContextFactory;
 
     public void start(MqttProperties props, HookManager hookManager, io.quickmq.data.PersistenceService persistence) throws InterruptedException {
         brokerHandler.setProperties(props);
         brokerHandler.setPersistence(persistence);
         brokerHandler.setHookManager(hookManager);
+        
+        sslContextFactory = new SslContextFactory(props);
 
         int workers = resolveWorkerThreads();
         if (EpollHelper.isAvailable()) {
@@ -147,9 +152,77 @@ public class MqttServer {
             }
         }
 
-        log.info("Keepalive: default={}s, max={}s, connectTimeout={}s, proxyProtocol={}",
+        // ---------- MQTT over TLS/SSL ----------
+        List<Integer> sslPorts = props.resolveSslPorts();
+        if (!sslPorts.isEmpty() && sslContextFactory.isSslEnabled()) {
+            SslContext sslContext = sslContextFactory.getSslContext();
+            ServerBootstrap sslBootstrap = newBootstrap()
+                    .childHandler(new ChannelInitializer<SocketChannel>() {
+                        @Override
+                        protected void initChannel(SocketChannel ch) {
+                            var pipeline = ch.pipeline();
+                            if (proxyProtocol) {
+                                pipeline.addLast(new HAProxyMessageDecoder());
+                                pipeline.addLast(new ProxyProtocolHandler());
+                            }
+                            pipeline.addLast(new SslHandler(sslContext.newEngine(ch.alloc())));
+                            if (connectTimeout > 0) {
+                                pipeline.addLast(IDLE_HANDLER_NAME,
+                                        new IdleStateHandler(connectTimeout, 0, 0, TimeUnit.SECONDS));
+                            }
+                            pipeline.addLast(MqttEncoder.INSTANCE)
+                                    .addLast(new MqttDecoder(maxMsg))
+                                    .addLast(brokerHandler);
+                        }
+                    });
+            for (int port : sslPorts) {
+                ChannelFuture future = sslBootstrap.bind(port).sync();
+                serverChannels.add(future.channel());
+                log.info("MQTT over TLS 已监听端口: {}{}", port, proxyProtocol ? " [PROXY protocol]" : "");
+            }
+        }
+
+        // ---------- WebSocket over TLS/SSL ----------
+        List<Integer> wssPorts = props.resolveWssPorts();
+        if (!wssPorts.isEmpty() && sslContextFactory.isSslEnabled()) {
+            SslContext sslContext = sslContextFactory.getSslContext();
+            String wsPath = props.getWsPath();
+            int wsMaxHttpBody = props.getWsMaxHttpBodySize();
+            ServerBootstrap wssBootstrap = newBootstrap()
+                    .childHandler(new ChannelInitializer<SocketChannel>() {
+                        @Override
+                        protected void initChannel(SocketChannel ch) {
+                            var pipeline = ch.pipeline();
+                            if (proxyProtocol) {
+                                pipeline.addLast(new HAProxyMessageDecoder());
+                                pipeline.addLast(new ProxyProtocolHandler());
+                            }
+                            pipeline.addLast(new SslHandler(sslContext.newEngine(ch.alloc())));
+                            pipeline.addLast(new HttpServerCodec())
+                                    .addLast(new HttpObjectAggregator(wsMaxHttpBody))
+                                    .addLast(new WebSocketServerProtocolHandler(wsPath))
+                                    .addLast(new WebSocketFrameToByteBufDecoder())
+                                    .addLast(new ByteBufToWebSocketFrameEncoder());
+                            if (connectTimeout > 0) {
+                                pipeline.addLast(IDLE_HANDLER_NAME,
+                                        new IdleStateHandler(connectTimeout, 0, 0, TimeUnit.SECONDS));
+                            }
+                            pipeline.addLast(new MqttDecoder(maxMsg))
+                                    .addLast(MqttEncoder.INSTANCE)
+                                    .addLast(brokerHandler);
+                        }
+                    });
+            for (int port : wssPorts) {
+                ChannelFuture future = wssBootstrap.bind(port).sync();
+                serverChannels.add(future.channel());
+                log.info("MQTT WebSocket over TLS 已监听端口: {} 路径: {}{}", port, wsPath,
+                        proxyProtocol ? " [PROXY protocol]" : "");
+            }
+        }
+
+        log.info("Keepalive: default={}s, max={}s, connectTimeout={}s, proxyProtocol={}, SSL={}",
                 props.getDefaultKeepaliveSeconds(), props.getMaxKeepaliveSeconds(),
-                connectTimeout, proxyProtocol);
+                connectTimeout, proxyProtocol, sslContextFactory.isSslEnabled());
     }
 
     private ServerBootstrap newBootstrap() {

@@ -11,6 +11,7 @@ import io.quickmq.mqtt.handler.*;
 import io.quickmq.mqtt.hook.HookManager;
 import io.quickmq.mqtt.hook.MqttEventHook;
 import io.quickmq.mqtt.subscription.SubscriptionStore;
+import io.quickmq.mqtt.store.Qos2MessageStore;
 import io.quickmq.mqtt.store.RetainedStore;
 import io.quickmq.mqtt.store.WillStore;
 import io.quickmq.config.MqttProperties;
@@ -36,6 +37,8 @@ public class MqttBrokerHandler extends ChannelInboundHandlerAdapter {
     private final SubscriptionStore subscriptionStore = new SubscriptionStore();
     private final RetainedStore retainedStore = new RetainedStore();
     private final WillStore willStore = new WillStore();
+    private final Qos2MessageStore qos2MessageStore;
+    private final ServerStatusManager serverStatus = new ServerStatusManager();
     private final Map<String, Channel> clientIdToChannel = new ConcurrentHashMap<>();
     private Map<MqttMessageType, MqttMessageHandler> handlers;
 
@@ -43,6 +46,14 @@ public class MqttBrokerHandler extends ChannelInboundHandlerAdapter {
             new IdleReaderIdleHandler(),
             new FireUserEventTriggeredHandler()
     );
+
+    public MqttBrokerHandler() {
+        this.qos2MessageStore = new Qos2MessageStore(null);
+    }
+    
+    public MqttBrokerHandler(PersistenceService persistence) {
+        this.qos2MessageStore = new Qos2MessageStore(persistence);
+    }
 
     public void setProperties(MqttProperties properties) {
         this.properties = properties;
@@ -61,15 +72,15 @@ public class MqttBrokerHandler extends ChannelInboundHandlerAdapter {
         return Stream.of(
                 new ConnectMessageHandler(
                         () -> properties != null && properties.isDefaultSessionPresent(),
-                        clientIdToChannel, willStore, hookManager, () -> properties, persistence),
+                        clientIdToChannel, willStore, qos2MessageStore, hookManager, () -> properties, persistence, serverStatus),
                 new PingReqMessageHandler(),
                 new DisconnectMessageHandler(subscriptionStore, willStore, hookManager),
                 new SubscribeMessageHandler(subscriptionStore, retainedStore, hookManager, persistence),
-                new PublishMessageHandler(subscriptionStore, retainedStore, hookManager, persistence),
+                new PublishMessageHandler(subscriptionStore, retainedStore, qos2MessageStore, hookManager, persistence),
                 new UnsubscribeMessageHandler(subscriptionStore, hookManager, persistence),
                 new PubAckMessageHandler(),
                 new PubRecMessageHandler(),
-                new PubRelMessageHandler(),
+                new PubRelMessageHandler(qos2MessageStore),
                 new PubCompMessageHandler()
         ).collect(Collectors.toUnmodifiableMap(MqttMessageHandler::messageType, h -> h));
     }

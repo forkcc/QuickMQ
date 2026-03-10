@@ -24,6 +24,12 @@ public final class ChannelAttributes {
     public static InetSocketAddress remoteAddress(io.netty.channel.Channel channel) {
         InetSocketAddress real = channel.attr(REAL_REMOTE_ADDRESS).get();
         if (real != null) return real;
-        return (InetSocketAddress) channel.remoteAddress();
+        
+        Object remoteAddr = channel.remoteAddress();
+        if (remoteAddr instanceof InetSocketAddress) {
+            return (InetSocketAddress) remoteAddr;
+        }
+        // 对于测试中的 EmbeddedSocketAddress 或其他类型，返回一个默认地址
+        return new InetSocketAddress("127.0.0.1", 0);
     }
 }

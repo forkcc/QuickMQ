@@ -107,7 +107,7 @@ class ConnectMessageHandlerTest {
     @Test
     void handle_authHook_rejects() {
         MqttAuthHook rejectHook = ctx -> AuthResult.badCredentials("wrong password");
-        HookManager hm = new HookManager(props, rejectHook, null);
+        HookManager hm = new HookManager(props, rejectHook, null, null);
 
         var cc = createChannel();
         createHandler(hm).handle(cc.ctx(), buildConnect("c1", 60, 4));
@@ -121,7 +121,7 @@ class ConnectMessageHandlerTest {
     @Test
     void handle_authHook_accepts() {
         MqttAuthHook acceptHook = ctx -> AuthResult.accept();
-        HookManager hm = new HookManager(props, acceptHook, null);
+        HookManager hm = new HookManager(props, acceptHook, null, null);
 
         var cc = createChannel();
         createHandler(hm).handle(cc.ctx(), buildConnect("c1", 60, 4));
@@ -161,7 +161,7 @@ class ConnectMessageHandlerTest {
 
     @Test
     void handle_defaultAuth_allowsAll() {
-        HookManager hm = new HookManager(props, null, null);
+        HookManager hm = new HookManager(props, null, null, null);
         var cc = createChannel();
         createHandler(hm).handle(cc.ctx(), buildConnect("c1", 60, 4));
 

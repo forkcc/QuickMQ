@@ -15,9 +15,14 @@ spring:
         dialect: org.hibernate.dialect.HSQLDialect
 
 mqtt:
-  tcp-ports: [ 0 ]
+  tcp-ports: [ 1893 ]
   ws-ports: []
+  ssl-ports: []
+  wss-ports: []
+  session-expiry-hours: 1
+  qos2-message-expiry-hours: 1
   hooks:
     auth-url: ""
     event-url: ""
     http-timeout-ms: 1000
+  proxy-protocol: false

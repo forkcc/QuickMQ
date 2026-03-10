@@ -23,7 +23,7 @@ class HookManagerTest {
 
     @Test
     void defaultAuth_noBean_noUrl_allowsAll() {
-        HookManager hm = new HookManager(defaultProps(), null, null);
+        HookManager hm = new HookManager(defaultProps(), null, null, null);
         ConnectContext ctx = new ConnectContext("c1", "user", null,
                 new InetSocketAddress("127.0.0.1", 1234), 4, true);
 
@@ -34,7 +34,7 @@ class HookManagerTest {
     @Test
     void beanAuth_usedWhenProvided() {
         MqttAuthHook customAuth = ctx -> AuthResult.reject("custom reject");
-        HookManager hm = new HookManager(defaultProps(), customAuth, null);
+        HookManager hm = new HookManager(defaultProps(), customAuth, null, null);
         ConnectContext ctx = new ConnectContext("c1", null, null, null, 4, true);
 
         AuthResult result = hm.authenticate(ctx);
@@ -45,7 +45,7 @@ class HookManagerTest {
     @Test
     void authException_rejectsConnection() {
         MqttAuthHook badHook = ctx -> { throw new RuntimeException("boom"); };
-        HookManager hm = new HookManager(defaultProps(), badHook, null);
+        HookManager hm = new HookManager(defaultProps(), badHook, null, null);
         ConnectContext ctx = new ConnectContext("c1", null, null, null, 4, true);
 
         AuthResult result = hm.authenticate(ctx);
@@ -55,7 +55,7 @@ class HookManagerTest {
 
     @Test
     void noEventHooks_hasEventHooksFalse() {
-        HookManager hm = new HookManager(defaultProps(), null, null);
+        HookManager hm = new HookManager(defaultProps(), null, null, null);
         assertFalse(hm.hasEventHooks());
     }
 
@@ -69,7 +69,7 @@ class HookManagerTest {
             }
         };
 
-        HookManager hm = new HookManager(defaultProps(), null, List.of(eventHook));
+        HookManager hm = new HookManager(defaultProps(), null, List.of(eventHook), null);
         assertTrue(hm.hasEventHooks());
 
         hm.fireClientConnected("c1", new InetSocketAddress("127.0.0.1", 1234));
@@ -92,7 +92,7 @@ class HookManagerTest {
             }
         };
 
-        HookManager hm = new HookManager(defaultProps(), null, List.of(hook1, hook2));
+        HookManager hm = new HookManager(defaultProps(), null, List.of(hook1, hook2), null);
         hm.fireClientConnected("c1", new InetSocketAddress("127.0.0.1", 1234));
         assertEquals(2, count.get());
     }
@@ -113,7 +113,7 @@ class HookManagerTest {
             }
         };
 
-        HookManager hm = new HookManager(defaultProps(), null, List.of(badHook, goodHook));
+        HookManager hm = new HookManager(defaultProps(), null, List.of(badHook, goodHook), null);
         assertDoesNotThrow(() -> hm.fireClientConnected("c1", new InetSocketAddress("127.0.0.1", 1234)));
         assertTrue(secondCalled.get());
     }
@@ -133,7 +133,7 @@ class HookManagerTest {
         };
 
         InetSocketAddress addr = new InetSocketAddress("127.0.0.1", 1234);
-        HookManager hm = new HookManager(defaultProps(), null, List.of(hook));
+        HookManager hm = new HookManager(defaultProps(), null, List.of(hook), null);
         hm.fireClientConnected("c1", addr);
         hm.fireClientDisconnected("c1", addr, MqttEventHook.DisconnectReason.NORMAL);
         hm.fireMessagePublish("c1", "t", MqttQoS.AT_MOST_ONCE, false, 100);
@@ -148,7 +148,7 @@ class HookManagerTest {
 
     @Test
     void noEventHooks_fireDoesNothing() {
-        HookManager hm = new HookManager(defaultProps(), null, null);
+        HookManager hm = new HookManager(defaultProps(), null, null, null);
         assertDoesNotThrow(() -> {
             hm.fireClientConnected("c1", new InetSocketAddress("127.0.0.1", 1234));
             hm.fireClientDisconnected("c1", null, MqttEventHook.DisconnectReason.IDLE_TIMEOUT);

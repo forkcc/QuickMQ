@@ -15,6 +15,7 @@ pom.xml.releaseBackup
 .classpath
 .settings/
 .vscode/
+.factorypath
 
 # OS
 .DS_Store
@@ -23,3 +24,4 @@ Thumbs.db
 # Logs / 运行时
 *.log
 port-stats.json
+

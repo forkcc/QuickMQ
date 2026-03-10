@@ -79,3 +79,25 @@ mqtt:
   # 启用 HAProxy PROXY protocol v1/v2 以透传真实客户端 IP
   # 仅在 Broker 前有代理（HAProxy/Nginx 等）时开启
   proxy-protocol: false
+
+  # ---------- Session Expiry ----------
+  # 会话过期时间（小时），cleanSession=false 的客户端断开连接后会话保留时间
+  # 0 = 永不过期
+  session-expiry-hours: 24
+  # QoS 2 消息状态过期时间（小时），未完成的 QoS 2 消息状态保留时间
+  # 0 = 永不过期
+  qos2-message-expiry-hours: 24
+
+  # ---------- SSL/TLS ----------
+  # MQTT over TLS/SSL 监听端口列表，留空则不启 SSL
+  ssl-ports: []
+  # WebSocket over TLS/SSL 监听端口列表，留空则不启 WSS
+  wss-ports: []
+  # SSL 证书文件路径（PEM 格式）
+  ssl-cert-path: ""
+  # SSL 私钥文件路径（PEM 格式）
+  ssl-key-path: ""
+  # SSL 信任证书文件路径（PEM 格式，用于客户端证书验证）
+  ssl-trust-cert-path: ""
+  # 是否需要客户端证书验证（mTLS）
+  ssl-client-auth: false

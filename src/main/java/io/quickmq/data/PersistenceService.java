@@ -1,9 +1,11 @@
 package io.quickmq.data;
 
 import io.quickmq.data.entity.ClientSessionEntity;
+import io.quickmq.data.entity.Qos2MessageEntity;
 import io.quickmq.data.entity.RetainedMessageEntity;
 import io.quickmq.data.entity.SubscriptionEntity;
 import io.quickmq.data.repository.ClientSessionRepository;
+import io.quickmq.data.repository.Qos2MessageRepository;
 import io.quickmq.data.repository.RetainedMessageRepository;
 import io.quickmq.data.repository.SubscriptionRepository;
 import org.slf4j.Logger;
@@ -29,14 +31,17 @@ public class PersistenceService {
     private final ClientSessionRepository sessionRepo;
     private final SubscriptionRepository subscriptionRepo;
     private final RetainedMessageRepository retainedRepo;
+    private final Qos2MessageRepository qos2MessageRepo;
     private final ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor();
 
     public PersistenceService(ClientSessionRepository sessionRepo,
                               SubscriptionRepository subscriptionRepo,
-                              RetainedMessageRepository retainedRepo) {
+                              RetainedMessageRepository retainedRepo,
+                              Qos2MessageRepository qos2MessageRepo) {
         this.sessionRepo = sessionRepo;
         this.subscriptionRepo = subscriptionRepo;
         this.retainedRepo = retainedRepo;
+        this.qos2MessageRepo = qos2MessageRepo;
     }
 
     // ==================== 会话 ====================
@@ -181,5 +186,119 @@ public class PersistenceService {
     @Transactional
     public void deleteRetained(String topic) {
         retainedRepo.deleteByTopic(topic);
+    }
+
+    // ==================== QoS 2 消息状态 ====================
+
+    public void saveQos2MessageAsync(String clientId, Integer messageId, String topic, byte[] payload, int qos, Qos2MessageEntity.State state) {
+        executor.execute(() -> {
+            try {
+                saveQos2Message(clientId, messageId, topic, payload, qos, state);
+            } catch (Exception e) {
+                log.warn("持久化 QoS 2 消息状态失败 clientId={} messageId={}: {}", clientId, messageId, e.getMessage());
+            }
+        });
+    }
+
+    @Transactional
+    public void saveQos2Message(String clientId, Integer messageId, String topic, byte[] payload, int qos, Qos2MessageEntity.State state) {
+        Qos2MessageEntity entity = qos2MessageRepo.findByClientIdAndMessageId(clientId, messageId).orElse(null);
+        if (entity == null) {
+            entity = new Qos2MessageEntity(clientId, messageId, topic, payload, qos, state);
+        } else {
+            entity.setState(state);
+            entity.setPayload(payload);
+        }
+        qos2MessageRepo.save(entity);
+    }
+
+    public void updateQos2MessageStateAsync(String clientId, Integer messageId, Qos2MessageEntity.State state) {
+        executor.execute(() -> {
+            try {
+                updateQos2MessageState(clientId, messageId, state);
+            } catch (Exception e) {
+                log.warn("更新 QoS 2 消息状态失败 clientId={} messageId={}: {}", clientId, messageId, e.getMessage());
+            }
+        });
+    }
+
+    @Transactional
+    public void updateQos2MessageState(String clientId, Integer messageId, Qos2MessageEntity.State state) {
+        qos2MessageRepo.findByClientIdAndMessageId(clientId, messageId).ifPresent(entity -> {
+            entity.setState(state);
+            qos2MessageRepo.save(entity);
+        });
+    }
+
+    public void deleteQos2MessageAsync(String clientId, Integer messageId) {
+        executor.execute(() -> {
+            try {
+                deleteQos2Message(clientId, messageId);
+            } catch (Exception e) {
+                log.warn("删除 QoS 2 消息状态失败 clientId={} messageId={}: {}", clientId, messageId, e.getMessage());
+            }
+        });
+    }
+
+    @Transactional
+    public void deleteQos2Message(String clientId, Integer messageId) {
+        qos2MessageRepo.deleteByClientIdAndMessageId(clientId, messageId);
+    }
+
+    public void deleteAllQos2MessagesAsync(String clientId) {
+        executor.execute(() -> {
+            try {
+                deleteAllQos2Messages(clientId);
+            } catch (Exception e) {
+                log.warn("删除全部 QoS 2 消息状态失败 clientId={}: {}", clientId, e.getMessage());
+            }
+        });
+    }
+
+    @Transactional
+    public void deleteAllQos2Messages(String clientId) {
+        qos2MessageRepo.deleteByClientId(clientId);
+    }
+
+    @Transactional(readOnly = true)
+    public List<Qos2MessageEntity> findQos2Messages(String clientId) {
+        return qos2MessageRepo.findByClientId(clientId);
+    }
+
+    @Transactional(readOnly = true)
+    public List<Qos2MessageEntity> findQos2MessagesByState(String clientId, Qos2MessageEntity.State state) {
+        return qos2MessageRepo.findByClientIdAndState(clientId, state);
+    }
+
+    public void cleanupExpiredQos2MessagesAsync(int expiryHours) {
+        executor.execute(() -> {
+            try {
+                cleanupExpiredQos2Messages(expiryHours);
+            } catch (Exception e) {
+                log.warn("清理过期 QoS 2 消息状态失败: {}", e.getMessage());
+            }
+        });
+    }
+
+    @Transactional
+    public void cleanupExpiredQos2Messages(int expiryHours) {
+        Instant expiryTime = Instant.now().minusSeconds(expiryHours * 3600L);
+        qos2MessageRepo.deleteExpired(expiryTime);
+    }
+
+    public void cleanupExpiredSessionsAsync(int expiryHours) {
+        executor.execute(() -> {
+            try {
+                cleanupExpiredSessions(expiryHours);
+            } catch (Exception e) {
+                log.warn("清理过期会话失败: {}", e.getMessage());
+            }
+        });
+    }
+
+    @Transactional
+    public void cleanupExpiredSessions(int expiryHours) {
+        Instant expiryTime = Instant.now().minusSeconds(expiryHours * 3600L);
+        sessionRepo.deleteExpired(expiryTime);
     }
 }

@@ -2,9 +2,13 @@ package io.quickmq.mqtt.handler;
 
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.handler.codec.mqtt.*;
+import java.net.InetSocketAddress;
 import io.quickmq.data.PersistenceService;
 import io.quickmq.mqtt.ChannelAttributes;
 import io.quickmq.mqtt.MqttResponses;
+import io.quickmq.mqtt.TopicValidator;
+import io.quickmq.mqtt.hook.AclCheckContext;
+import io.quickmq.mqtt.hook.AclResult;
 import io.quickmq.mqtt.hook.HookManager;
 import io.quickmq.mqtt.store.RetainedStore;
 import io.quickmq.mqtt.subscription.SubscriptionStore;
@@ -47,6 +51,24 @@ public class SubscribeMessageHandler implements MqttMessageHandler {
         for (MqttTopicSubscription sub : topicSubscriptions) {
             String filter = sub.topicFilter();
             MqttQoS qos = sub.qualityOfService();
+            
+            if (!TopicValidator.isSubscribableFilter(filter)) {
+                log.warn("无效的订阅过滤器: {}", filter);
+                grantedQos.add(0x80); // 0x80 表示失败
+                continue;
+            }
+            
+            if (hookManager != null && clientId != null) {
+                InetSocketAddress remoteAddr = ChannelAttributes.remoteAddress(ctx.channel());
+                AclCheckContext aclContext = AclCheckContext.forSubscribe(clientId, null, remoteAddr, filter);
+                AclResult aclResult = hookManager.checkAcl(aclContext);
+                if (!aclResult.allowed()) {
+                    log.warn("客户端 {} 无权限订阅主题 {}", clientId, filter);
+                    grantedQos.add(0x80); // 0x80 表示失败
+                    continue;
+                }
+            }
+            
             subscriptionStore.subscribe(ctx.channel(), filter, qos);
             grantedQos.add(qos.value());
             filters.add(filter);

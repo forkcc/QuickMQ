@@ -52,6 +52,20 @@ public class MqttProperties {
      */
     private int connectTimeoutSeconds = 10;
 
+    // ==================== Session Expiry ====================
+
+    /**
+     * 会话过期时间（小时）。cleanSession=false 的客户端断开连接后，其会话数据保留的时间。
+     * 0 = 永不过期。
+     */
+    private int sessionExpiryHours = 24;
+
+    /**
+     * QoS 2 消息状态过期时间（小时）。未完成的 QoS 2 消息状态保留的时间。
+     * 0 = 永不过期。
+     */
+    private int qos2MessageExpiryHours = 24;
+
     // ==================== Hooks ====================
 
     /** Hook 动态配置。 */
@@ -65,6 +79,38 @@ public class MqttProperties {
      * 默认关闭；未走代理时必须关闭，否则首包解析失败会断开连接。
      */
     private boolean proxyProtocol = false;
+
+    // ==================== SSL/TLS ====================
+
+    /**
+     * MQTT over TLS/SSL 监听端口列表。为空则不启 SSL。
+     */
+    private List<Integer> sslPorts = new ArrayList<>();
+
+    /**
+     * WebSocket over TLS/SSL 监听端口列表。为空则不启 WSS。
+     */
+    private List<Integer> wssPorts = new ArrayList<>();
+
+    /**
+     * SSL 证书文件路径（PEM 格式）。
+     */
+    private String sslCertPath = "";
+
+    /**
+     * SSL 私钥文件路径（PEM 格式）。
+     */
+    private String sslKeyPath = "";
+
+    /**
+     * SSL 信任证书文件路径（PEM 格式，用于客户端证书验证）。
+     */
+    private String sslTrustCertPath = "";
+
+    /**
+     * 是否需要客户端证书验证（mTLS）。
+     */
+    private boolean sslClientAuth = false;
 
     // ==================== getter / setter ====================
 
@@ -95,8 +141,32 @@ public class MqttProperties {
     public int getConnectTimeoutSeconds() { return connectTimeoutSeconds; }
     public void setConnectTimeoutSeconds(int v) { this.connectTimeoutSeconds = Math.max(0, v); }
 
+    public int getSessionExpiryHours() { return sessionExpiryHours; }
+    public void setSessionExpiryHours(int v) { this.sessionExpiryHours = Math.max(0, v); }
+
+    public int getQos2MessageExpiryHours() { return qos2MessageExpiryHours; }
+    public void setQos2MessageExpiryHours(int v) { this.qos2MessageExpiryHours = Math.max(0, v); }
+
     public boolean isProxyProtocol() { return proxyProtocol; }
     public void setProxyProtocol(boolean proxyProtocol) { this.proxyProtocol = proxyProtocol; }
+
+    public List<Integer> getSslPorts() { return sslPorts; }
+    public void setSslPorts(List<Integer> sslPorts) { this.sslPorts = sslPorts != null ? sslPorts : new ArrayList<>(); }
+
+    public List<Integer> getWssPorts() { return wssPorts; }
+    public void setWssPorts(List<Integer> wssPorts) { this.wssPorts = wssPorts != null ? wssPorts : new ArrayList<>(); }
+
+    public String getSslCertPath() { return sslCertPath; }
+    public void setSslCertPath(String sslCertPath) { this.sslCertPath = sslCertPath != null ? sslCertPath : ""; }
+
+    public String getSslKeyPath() { return sslKeyPath; }
+    public void setSslKeyPath(String sslKeyPath) { this.sslKeyPath = sslKeyPath != null ? sslKeyPath : ""; }
+
+    public String getSslTrustCertPath() { return sslTrustCertPath; }
+    public void setSslTrustCertPath(String sslTrustCertPath) { this.sslTrustCertPath = sslTrustCertPath != null ? sslTrustCertPath : ""; }
+
+    public boolean isSslClientAuth() { return sslClientAuth; }
+    public void setSslClientAuth(boolean sslClientAuth) { this.sslClientAuth = sslClientAuth; }
 
     public HookProperties getHooks() { return hooks; }
     public void setHooks(HookProperties hooks) { this.hooks = hooks != null ? hooks : new HookProperties(); }
@@ -107,6 +177,14 @@ public class MqttProperties {
 
     public List<Integer> resolveWsPorts() {
         return Optional.ofNullable(wsPorts).filter(l -> !l.isEmpty()).map(List::copyOf).orElse(List.of());
+    }
+
+    public List<Integer> resolveSslPorts() {
+        return Optional.ofNullable(sslPorts).filter(l -> !l.isEmpty()).map(List::copyOf).orElse(List.of());
+    }
+
+    public List<Integer> resolveWssPorts() {
+        return Optional.ofNullable(wssPorts).filter(l -> !l.isEmpty()).map(List::copyOf).orElse(List.of());
     }
 
     /**

@@ -19,6 +19,18 @@ public record AuthResult(boolean accepted, MqttConnectReturnCode returnCode, Str
         return new AuthResult(false, MqttConnectReturnCode.CONNECTION_REFUSED_BAD_USER_NAME_OR_PASSWORD, reason);
     }
 
+    public static AuthResult serverUnavailable(String reason) {
+        return new AuthResult(false, MqttConnectReturnCode.CONNECTION_REFUSED_SERVER_UNAVAILABLE, reason);
+    }
+
+    public static AuthResult identifierRejected(String reason) {
+        return new AuthResult(false, MqttConnectReturnCode.CONNECTION_REFUSED_IDENTIFIER_REJECTED, reason);
+    }
+
+    public static AuthResult unacceptableProtocolVersion(String reason) {
+        return new AuthResult(false, MqttConnectReturnCode.CONNECTION_REFUSED_UNACCEPTABLE_PROTOCOL_VERSION, reason);
+    }
+
     public static AuthResult reject(MqttConnectReturnCode code, String reason) {
         return new AuthResult(false, code, reason);
     }

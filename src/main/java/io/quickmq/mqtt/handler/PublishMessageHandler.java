@@ -3,10 +3,15 @@ package io.quickmq.mqtt.handler;
 import io.netty.channel.Channel;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.handler.codec.mqtt.*;
+import java.net.InetSocketAddress;
 import io.quickmq.data.PersistenceService;
 import io.quickmq.mqtt.ChannelAttributes;
 import io.quickmq.mqtt.MqttResponses;
+import io.quickmq.mqtt.hook.AclCheckContext;
+import io.quickmq.mqtt.hook.AclResult;
 import io.quickmq.mqtt.hook.HookManager;
+import io.quickmq.mqtt.TopicValidator;
+import io.quickmq.mqtt.store.Qos2MessageStore;
 import io.quickmq.mqtt.store.RetainedStore;
 import io.quickmq.mqtt.subscription.SubscriberResult;
 import io.quickmq.mqtt.subscription.SubscriptionStore;
@@ -21,13 +26,20 @@ public class PublishMessageHandler implements MqttMessageHandler {
     private static final Logger log = LoggerFactory.getLogger(PublishMessageHandler.class);
     private final SubscriptionStore subscriptionStore;
     private final RetainedStore retainedStore;
+    private final Qos2MessageStore qos2MessageStore;
     private final HookManager hookManager;
     private final PersistenceService persistence;
 
     public PublishMessageHandler(SubscriptionStore subscriptionStore, RetainedStore retainedStore,
                                  HookManager hookManager, PersistenceService persistence) {
+        this(subscriptionStore, retainedStore, null, hookManager, persistence);
+    }
+    
+    public PublishMessageHandler(SubscriptionStore subscriptionStore, RetainedStore retainedStore,
+                                 Qos2MessageStore qos2MessageStore, HookManager hookManager, PersistenceService persistence) {
         this.subscriptionStore = subscriptionStore;
         this.retainedStore = retainedStore;
+        this.qos2MessageStore = qos2MessageStore;
         this.hookManager = hookManager;
         this.persistence = persistence;
     }
@@ -45,11 +57,33 @@ public class PublishMessageHandler implements MqttMessageHandler {
             MqttQoS pubQos = publish.fixedHeader().qosLevel();
             boolean retain = publish.fixedHeader().isRetain();
             int payloadSize = publish.payload().readableBytes();
+            
+            if (!TopicValidator.isPublishableTopic(topic)) {
+                log.warn("无效的发布主题: {}", topic);
+                ctx.close();
+                return;
+            }
+            
+            String clientId = ctx.channel().attr(ChannelAttributes.CLIENT_ID).get();
+            if (hookManager != null && clientId != null) {
+                InetSocketAddress remoteAddr = ChannelAttributes.remoteAddress(ctx.channel());
+                AclCheckContext aclContext = AclCheckContext.forPublish(clientId, null, remoteAddr, topic);
+                AclResult aclResult = hookManager.checkAcl(aclContext);
+                if (!aclResult.allowed()) {
+                    log.warn("客户端 {} 无权限发布主题 {}", clientId, topic);
+                    return;
+                }
+            }
 
             if (pubQos == MqttQoS.AT_LEAST_ONCE) {
                 ctx.writeAndFlush(MqttResponses.pubAck(publish.variableHeader().packetId()));
             } else if (pubQos == MqttQoS.EXACTLY_ONCE) {
-                ctx.writeAndFlush(MqttResponses.pubRec(publish.variableHeader().packetId()));
+                int messageId = publish.variableHeader().packetId();
+                ctx.writeAndFlush(MqttResponses.pubRec(messageId));
+                
+                if (qos2MessageStore != null) {
+                    qos2MessageStore.storePubRecReceived(ctx.channel(), publish);
+                }
             }
 
             if (retainedStore != null) {
@@ -66,7 +100,6 @@ public class PublishMessageHandler implements MqttMessageHandler {
                 }
             }
 
-            String clientId = ctx.channel().attr(ChannelAttributes.CLIENT_ID).get();
             if (hookManager != null) {
                 hookManager.fireMessagePublish(clientId, topic, pubQos, retain, payloadSize);
             }

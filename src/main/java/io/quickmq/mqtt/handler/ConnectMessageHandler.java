@@ -9,12 +9,15 @@ import io.netty.handler.codec.mqtt.MqttMessageType;
 import io.netty.handler.timeout.IdleStateHandler;
 import io.quickmq.config.MqttProperties;
 import io.quickmq.data.PersistenceService;
+import io.quickmq.data.entity.Qos2MessageEntity;
 import io.quickmq.mqtt.ChannelAttributes;
 import io.quickmq.mqtt.MqttResponses;
 import io.quickmq.mqtt.MqttServer;
+import io.quickmq.mqtt.ServerStatusManager;
 import io.quickmq.mqtt.hook.AuthResult;
 import io.quickmq.mqtt.hook.ConnectContext;
 import io.quickmq.mqtt.hook.HookManager;
+import io.quickmq.mqtt.store.Qos2MessageStore;
 import io.quickmq.mqtt.store.WillStore;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -32,19 +35,30 @@ public class ConnectMessageHandler implements MqttMessageHandler {
     private final BooleanSupplier sessionPresentSupplier;
     private final Map<String, Channel> clientIdToChannel;
     private final WillStore willStore;
+    private final Qos2MessageStore qos2MessageStore;
     private final HookManager hookManager;
     private final Supplier<MqttProperties> propsSupplier;
     private final PersistenceService persistence;
+    private final ServerStatusManager serverStatus;
 
     public ConnectMessageHandler(BooleanSupplier sessionPresentSupplier, Map<String, Channel> clientIdToChannel,
                                  WillStore willStore, HookManager hookManager, Supplier<MqttProperties> propsSupplier,
                                  PersistenceService persistence) {
+        this(sessionPresentSupplier, clientIdToChannel, willStore, null, hookManager, propsSupplier, persistence, null);
+    }
+    
+    public ConnectMessageHandler(BooleanSupplier sessionPresentSupplier, Map<String, Channel> clientIdToChannel,
+                                 WillStore willStore, Qos2MessageStore qos2MessageStore, HookManager hookManager, 
+                                 Supplier<MqttProperties> propsSupplier, PersistenceService persistence, 
+                                 ServerStatusManager serverStatus) {
         this.sessionPresentSupplier = sessionPresentSupplier != null ? sessionPresentSupplier : () -> false;
         this.clientIdToChannel = clientIdToChannel;
         this.willStore = willStore;
+        this.qos2MessageStore = qos2MessageStore;
         this.hookManager = hookManager;
         this.propsSupplier = propsSupplier;
         this.persistence = persistence;
+        this.serverStatus = serverStatus != null ? serverStatus : new ServerStatusManager();
     }
 
     @Override
@@ -67,6 +81,33 @@ public class ConnectMessageHandler implements MqttMessageHandler {
             ctx.writeAndFlush(MqttResponses.connAck(
                     MqttConnectReturnCode.CONNECTION_REFUSED_UNACCEPTABLE_PROTOCOL_VERSION, false));
             if (hookManager != null) hookManager.fireConnectRejected(clientId, remote, "unsupported protocol version " + version);
+            ctx.close();
+            return;
+        }
+
+        if (clientId == null || clientId.isEmpty()) {
+            log.debug("客户端 ID 为空 [MQTT-3.1.3-8]");
+            ctx.writeAndFlush(MqttResponses.connAck(
+                    MqttConnectReturnCode.CONNECTION_REFUSED_IDENTIFIER_REJECTED, false));
+            if (hookManager != null) hookManager.fireConnectRejected(clientId, remote, "client identifier rejected");
+            ctx.close();
+            return;
+        }
+
+        if (clientId.length() > 23) {
+            log.debug("客户端 ID 过长: {} [MQTT-3.1.3-5]", clientId.length());
+            ctx.writeAndFlush(MqttResponses.connAck(
+                    MqttConnectReturnCode.CONNECTION_REFUSED_IDENTIFIER_REJECTED, false));
+            if (hookManager != null) hookManager.fireConnectRejected(clientId, remote, "client identifier too long");
+            ctx.close();
+            return;
+        }
+
+        if (!serverStatus.isAcceptingConnections()) {
+            log.debug("服务器当前不接受新连接 clientId={}", clientId);
+            ctx.writeAndFlush(MqttResponses.connAck(
+                    MqttConnectReturnCode.CONNECTION_REFUSED_SERVER_UNAVAILABLE, false));
+            if (hookManager != null) hookManager.fireConnectRejected(clientId, remote, "server unavailable");
             ctx.close();
             return;
         }
@@ -103,7 +144,7 @@ public class ConnectMessageHandler implements MqttMessageHandler {
 
         replaceIdleHandler(ctx, connect.variableHeader().keepAliveTimeSeconds());
 
-        boolean sessionPresent = sessionPresentSupplier.getAsBoolean();
+        boolean sessionPresent = calculateSessionPresent(clientId, cleanSession);
         ctx.channel().writeAndFlush(MqttResponses.connAck(sessionPresent));
 
         if (hookManager != null) hookManager.fireClientConnected(clientId, remote);
@@ -112,9 +153,39 @@ public class ConnectMessageHandler implements MqttMessageHandler {
             if (cleanSession) {
                 persistence.deleteAllSubscriptionsAsync(clientId);
                 persistence.deleteSessionAsync(clientId);
+                if (qos2MessageStore != null) {
+                    qos2MessageStore.removeAllForClient(clientId);
+                }
             } else {
                 persistence.saveSessionAsync(clientId, username, false);
+                if (qos2MessageStore != null) {
+                    qos2MessageStore.loadClientStates(clientId);
+                }
             }
+        }
+    }
+
+    private boolean calculateSessionPresent(String clientId, boolean cleanSession) {
+        if (cleanSession) {
+            return false;
+        }
+        
+        if (clientId == null || clientId.isEmpty()) {
+            return false;
+        }
+        
+        if (persistence == null) {
+            return false;
+        }
+        
+        try {
+            boolean hasSubscriptions = !persistence.findSubscriptions(clientId).isEmpty();
+            boolean hasQos2Messages = !persistence.findQos2Messages(clientId).isEmpty();
+            
+            return hasSubscriptions || hasQos2Messages;
+        } catch (Exception e) {
+            log.warn("计算 Session Present 失败 clientId={}: {}", clientId, e.getMessage());
+            return false;
         }
     }
 

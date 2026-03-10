@@ -29,13 +29,15 @@ public class HookManager {
     private static final Logger log = LoggerFactory.getLogger(HookManager.class);
 
     private final MqttAuthHook authHook;
+    private final MqttAclHook aclHook;
     private final MqttEventHook[] eventHooks;
     private final boolean hasEventHooks;
 
     public HookManager(
             MqttProperties mqttProperties,
             @org.springframework.lang.Nullable MqttAuthHook beanAuthHook,
-            @org.springframework.lang.Nullable List<MqttEventHook> beanEventHooks
+            @org.springframework.lang.Nullable List<MqttEventHook> beanEventHooks,
+            @org.springframework.lang.Nullable MqttAclHook beanAclHook
     ) {
         HookProperties hookProps = mqttProperties.getHooks();
         int timeoutMs = hookProps.getHttpTimeoutMs();
@@ -77,8 +79,21 @@ public class HookManager {
         this.eventHooks = merged.toArray(new MqttEventHook[0]);
         this.hasEventHooks = this.eventHooks.length > 0;
 
-        log.info("Hook 初始化完成: authHook={}, eventHooks={}个",
-                this.authHook.getClass().getSimpleName(), this.eventHooks.length);
+        // ---------- ACL Hook ----------
+        MqttAclHook resolvedAcl = null;
+        if (beanAclHook != null) {
+            resolvedAcl = beanAclHook;
+            log.info("ACL 钩子: Spring Bean {}", beanAclHook.getClass().getSimpleName());
+        }
+        if (resolvedAcl == null) {
+            resolvedAcl = new DefaultAclHook();
+        }
+        this.aclHook = resolvedAcl;
+
+        log.info("Hook 初始化完成: authHook={}, aclHook={}, eventHooks={}个",
+                this.authHook.getClass().getSimpleName(), 
+                this.aclHook.getClass().getSimpleName(),
+                this.eventHooks.length);
     }
 
     public boolean hasEventHooks() { return hasEventHooks; }
@@ -154,5 +169,21 @@ public class HookManager {
             try { hook.onClientKicked(clientId, remote); }
             catch (Exception e) { log.warn("eventHook.onClientKicked 异常: {}", e.getMessage()); }
         }
+    }
+    
+    /**
+     * 检查客户端 ACL 权限。
+     */
+    public AclResult checkAcl(AclCheckContext context) {
+        if (aclHook != null) {
+            try {
+                return aclHook.checkAcl(context);
+            } catch (Exception e) {
+                log.error("ACL 钩子异常: {}", e.getMessage(), e);
+                return AclResult.deny("internal acl error");
+            }
+        }
+        // 默认允许所有
+        return AclResult.allow();
     }
 }
