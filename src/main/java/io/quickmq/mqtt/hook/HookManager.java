@@ -14,17 +14,14 @@ import java.net.InetSocketAddress;
 import java.net.http.HttpClient;
 import java.time.Duration;
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.List;
+import java.util.concurrent.Executors;
 
 /**
  * Hook 管理器：统一调度认证钩子和审计事件钩子。
  * <p>
- * 百万连接优化：
- * <ul>
- *   <li>{@link #hasEventHooks} 快速路径标记——无 event hook 时所有 fire* 方法立即返回，零开销</li>
- *   <li>eventHooks 使用固定大小数组遍历，避免 Iterator 分配</li>
- * </ul>
+ * HTTP Webhook 使用虚拟线程 Executor（JDK 21+），阻塞 IO 不占用平台线程，
+ * 与 Netty EventLoop 完全隔离，百万连接下 Hook 调用不影响消息路径。
  */
 @Component
 public class HookManager {
@@ -50,6 +47,7 @@ public class HookManager {
         if (needHttp) {
             httpClient = HttpClient.newBuilder()
                     .connectTimeout(Duration.ofMillis(timeoutMs))
+                    .executor(Executors.newVirtualThreadPerTaskExecutor())
                     .build();
             mapper = new ObjectMapper();
         }
@@ -58,7 +56,7 @@ public class HookManager {
         MqttAuthHook resolvedAuth = null;
         if (!hookProps.getAuthUrl().isEmpty()) {
             resolvedAuth = new HttpAuthHook(hookProps.getAuthUrl(), timeoutMs, httpClient, mapper);
-            log.info("认证钩子: HTTP {}", hookProps.getAuthUrl());
+            log.info("认证钩子: HTTP {} (虚拟线程)", hookProps.getAuthUrl());
         }
         if (resolvedAuth == null && beanAuthHook != null) {
             resolvedAuth = beanAuthHook;
@@ -73,7 +71,7 @@ public class HookManager {
         List<MqttEventHook> merged = new ArrayList<>();
         if (!hookProps.getEventUrl().isEmpty()) {
             merged.add(new HttpEventHook(hookProps.getEventUrl(), timeoutMs, httpClient, mapper));
-            log.info("事件钩子: HTTP {}", hookProps.getEventUrl());
+            log.info("事件钩子: HTTP {} (虚拟线程)", hookProps.getEventUrl());
         }
         if (beanEventHooks != null) merged.addAll(beanEventHooks);
         this.eventHooks = merged.toArray(new MqttEventHook[0]);
@@ -83,11 +81,7 @@ public class HookManager {
                 this.authHook.getClass().getSimpleName(), this.eventHooks.length);
     }
 
-    public boolean hasEventHooks() {
-        return hasEventHooks;
-    }
-
-    // ==================== 认证（强制） ====================
+    public boolean hasEventHooks() { return hasEventHooks; }
 
     public AuthResult authenticate(ConnectContext ctx) {
         try {
@@ -97,8 +91,6 @@ public class HookManager {
             return AuthResult.reject("internal auth error");
         }
     }
-
-    // ==================== 审计事件（可选，无 hook 时零开销） ====================
 
     public void fireClientConnected(String clientId, InetSocketAddress remote) {
         if (!hasEventHooks) return;

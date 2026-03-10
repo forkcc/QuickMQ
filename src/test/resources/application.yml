@@ -1,0 +1,23 @@
+spring:
+  main:
+    web-application-type: none
+  datasource:
+    url: jdbc:hsqldb:mem:testdb
+    driver-class-name: org.hsqldb.jdbc.JDBCDriver
+    username: sa
+    password: ""
+  jpa:
+    hibernate:
+      ddl-auto: create-drop
+    open-in-view: false
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.HSQLDialect
+
+mqtt:
+  tcp-ports: [ 0 ]
+  ws-ports: []
+  hooks:
+    auth-url: ""
+    event-url: ""
+    http-timeout-ms: 1000

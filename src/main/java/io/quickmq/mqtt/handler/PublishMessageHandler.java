@@ -3,6 +3,7 @@ package io.quickmq.mqtt.handler;
 import io.netty.channel.Channel;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.handler.codec.mqtt.*;
+import io.quickmq.data.PersistenceService;
 import io.quickmq.mqtt.ChannelAttributes;
 import io.quickmq.mqtt.MqttResponses;
 import io.quickmq.mqtt.hook.HookManager;
@@ -13,12 +14,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
- * PUBLISH 处理器，面向百万连接优化：
- * <ul>
- *   <li>write/flush 分离：先 write 给所有订阅者，最后每个 Channel 仅 flush 一次</li>
- *   <li>背压检查：channel.isWritable()=false 时跳过投递，避免慢消费者导致 OOM</li>
- *   <li>findSubscribers 返回对象池管理的 {@link SubscriberResult}，零额外分配</li>
- * </ul>
+ * PUBLISH 处理器：write/flush 分离、背压检查、对象池、保留消息持久化。
  */
 public class PublishMessageHandler implements MqttMessageHandler {
 
@@ -26,11 +22,14 @@ public class PublishMessageHandler implements MqttMessageHandler {
     private final SubscriptionStore subscriptionStore;
     private final RetainedStore retainedStore;
     private final HookManager hookManager;
+    private final PersistenceService persistence;
 
-    public PublishMessageHandler(SubscriptionStore subscriptionStore, RetainedStore retainedStore, HookManager hookManager) {
+    public PublishMessageHandler(SubscriptionStore subscriptionStore, RetainedStore retainedStore,
+                                 HookManager hookManager, PersistenceService persistence) {
         this.subscriptionStore = subscriptionStore;
         this.retainedStore = retainedStore;
         this.hookManager = hookManager;
+        this.persistence = persistence;
     }
 
     @Override
@@ -55,6 +54,16 @@ public class PublishMessageHandler implements MqttMessageHandler {
 
             if (retainedStore != null) {
                 retainedStore.put(topic, publish, retain);
+            }
+
+            if (retain && persistence != null) {
+                if (payloadSize == 0) {
+                    persistence.deleteRetainedAsync(topic);
+                } else {
+                    byte[] payload = new byte[payloadSize];
+                    publish.payload().getBytes(publish.payload().readerIndex(), payload);
+                    persistence.saveRetainedAsync(topic, payload, pubQos.value());
+                }
             }
 
             String clientId = ctx.channel().attr(ChannelAttributes.CLIENT_ID).get();

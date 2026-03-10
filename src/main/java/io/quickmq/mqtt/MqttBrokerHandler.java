@@ -6,6 +6,7 @@ import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.ChannelInboundHandlerAdapter;
 import io.netty.handler.codec.mqtt.MqttMessage;
 import io.netty.handler.codec.mqtt.MqttMessageType;
+import io.quickmq.data.PersistenceService;
 import io.quickmq.mqtt.handler.*;
 import io.quickmq.mqtt.hook.HookManager;
 import io.quickmq.mqtt.hook.MqttEventHook;
@@ -23,10 +24,6 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
-/**
- * MQTT 协议业务 Handler：按消息类型委托适配器（Null Object 兜底），用户事件走策略链。
- * 多连接共享同一实例，SubscriptionStore 等状态线程安全。
- */
 @ChannelHandler.Sharable
 public class MqttBrokerHandler extends ChannelInboundHandlerAdapter {
 
@@ -35,6 +32,7 @@ public class MqttBrokerHandler extends ChannelInboundHandlerAdapter {
 
     private volatile MqttProperties properties;
     private volatile HookManager hookManager;
+    private volatile PersistenceService persistence;
     private final SubscriptionStore subscriptionStore = new SubscriptionStore();
     private final RetainedStore retainedStore = new RetainedStore();
     private final WillStore willStore = new WillStore();
@@ -50,6 +48,10 @@ public class MqttBrokerHandler extends ChannelInboundHandlerAdapter {
         this.properties = properties;
     }
 
+    public void setPersistence(PersistenceService persistence) {
+        this.persistence = persistence;
+    }
+
     public void setHookManager(HookManager hookManager) {
         this.hookManager = hookManager;
         this.handlers = buildHandlers();
@@ -59,12 +61,12 @@ public class MqttBrokerHandler extends ChannelInboundHandlerAdapter {
         return Stream.of(
                 new ConnectMessageHandler(
                         () -> properties != null && properties.isDefaultSessionPresent(),
-                        clientIdToChannel, willStore, hookManager, () -> properties),
+                        clientIdToChannel, willStore, hookManager, () -> properties, persistence),
                 new PingReqMessageHandler(),
                 new DisconnectMessageHandler(subscriptionStore, willStore, hookManager),
-                new SubscribeMessageHandler(subscriptionStore, retainedStore, hookManager),
-                new PublishMessageHandler(subscriptionStore, retainedStore, hookManager),
-                new UnsubscribeMessageHandler(subscriptionStore, hookManager),
+                new SubscribeMessageHandler(subscriptionStore, retainedStore, hookManager, persistence),
+                new PublishMessageHandler(subscriptionStore, retainedStore, hookManager, persistence),
+                new UnsubscribeMessageHandler(subscriptionStore, hookManager, persistence),
                 new PubAckMessageHandler(),
                 new PubRecMessageHandler(),
                 new PubRelMessageHandler(),

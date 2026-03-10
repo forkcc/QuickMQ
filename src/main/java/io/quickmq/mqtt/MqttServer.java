@@ -63,8 +63,9 @@ public class MqttServer {
     private final List<Channel> serverChannels = new ArrayList<>();
     private boolean epollUsed;
 
-    public void start(MqttProperties props, HookManager hookManager) throws InterruptedException {
+    public void start(MqttProperties props, HookManager hookManager, io.quickmq.data.PersistenceService persistence) throws InterruptedException {
         brokerHandler.setProperties(props);
+        brokerHandler.setPersistence(persistence);
         brokerHandler.setHookManager(hookManager);
 
         int workers = resolveWorkerThreads();

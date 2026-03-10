@@ -1,0 +1,34 @@
+version: "3.9"
+
+services:
+  quickmq:
+    build: .
+    image: quickmq:latest
+    container_name: quickmq
+    restart: unless-stopped
+    ports:
+      - "1883:1883"   # MQTT TCP
+      - "8083:8083"   # MQTT WebSocket
+    volumes:
+      - quickmq-data:/app/data
+    environment:
+      JAVA_OPTS: >-
+        -Xms2g -Xmx2g
+        -XX:MaxDirectMemorySize=4g
+        -XX:+UseZGC -XX:+ZGenerational
+        -XX:+AlwaysPreTouch
+        -Dio.netty.leakDetection.level=DISABLED
+        -Dio.netty.recycler.maxCapacityPerThread=4096
+    # 覆盖 application.yml 中的配置
+    # command: ["--mqtt.tcp-ports[0]=1883", "--mqtt.hooks.auth-url=http://auth:8080/mqtt/auth"]
+    ulimits:
+      nofile:
+        soft: 1500000
+        hard: 1500000
+    sysctls:
+      net.core.somaxconn: 65535
+      net.ipv4.tcp_max_syn_backlog: 65535
+
+volumes:
+  quickmq-data:
+    driver: local

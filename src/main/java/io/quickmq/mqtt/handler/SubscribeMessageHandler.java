@@ -2,6 +2,7 @@ package io.quickmq.mqtt.handler;
 
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.handler.codec.mqtt.*;
+import io.quickmq.data.PersistenceService;
 import io.quickmq.mqtt.ChannelAttributes;
 import io.quickmq.mqtt.MqttResponses;
 import io.quickmq.mqtt.hook.HookManager;
@@ -19,11 +20,14 @@ public class SubscribeMessageHandler implements MqttMessageHandler {
     private final SubscriptionStore subscriptionStore;
     private final RetainedStore retainedStore;
     private final HookManager hookManager;
+    private final PersistenceService persistence;
 
-    public SubscribeMessageHandler(SubscriptionStore subscriptionStore, RetainedStore retainedStore, HookManager hookManager) {
+    public SubscribeMessageHandler(SubscriptionStore subscriptionStore, RetainedStore retainedStore,
+                                   HookManager hookManager, PersistenceService persistence) {
         this.subscriptionStore = subscriptionStore;
         this.retainedStore = retainedStore;
         this.hookManager = hookManager;
+        this.persistence = persistence;
     }
 
     @Override
@@ -38,6 +42,8 @@ public class SubscribeMessageHandler implements MqttMessageHandler {
         List<MqttTopicSubscription> topicSubscriptions = subscribe.payload().topicSubscriptions();
         List<Integer> grantedQos = new ArrayList<>(topicSubscriptions.size());
         List<String> filters = new ArrayList<>(topicSubscriptions.size());
+        String clientId = ctx.channel().attr(ChannelAttributes.CLIENT_ID).get();
+
         for (MqttTopicSubscription sub : topicSubscriptions) {
             String filter = sub.topicFilter();
             MqttQoS qos = sub.qualityOfService();
@@ -47,12 +53,14 @@ public class SubscribeMessageHandler implements MqttMessageHandler {
             if (retainedStore != null) {
                 retainedStore.deliverMatching(filter, ctx.channel());
             }
+            if (persistence != null && clientId != null) {
+                persistence.saveSubscriptionAsync(clientId, filter, qos.value());
+            }
             log.debug("SUBSCRIBE filter={} qos={}", filter, qos);
         }
         ctx.writeAndFlush(MqttResponses.subAck(messageId, grantedQos));
 
         if (hookManager != null) {
-            String clientId = ctx.channel().attr(ChannelAttributes.CLIENT_ID).get();
             hookManager.fireClientSubscribe(clientId, filters);
         }
     }

@@ -8,6 +8,7 @@ import io.netty.handler.codec.mqtt.MqttMessage;
 import io.netty.handler.codec.mqtt.MqttMessageType;
 import io.netty.handler.timeout.IdleStateHandler;
 import io.quickmq.config.MqttProperties;
+import io.quickmq.data.PersistenceService;
 import io.quickmq.mqtt.ChannelAttributes;
 import io.quickmq.mqtt.MqttResponses;
 import io.quickmq.mqtt.MqttServer;
@@ -33,14 +34,17 @@ public class ConnectMessageHandler implements MqttMessageHandler {
     private final WillStore willStore;
     private final HookManager hookManager;
     private final Supplier<MqttProperties> propsSupplier;
+    private final PersistenceService persistence;
 
     public ConnectMessageHandler(BooleanSupplier sessionPresentSupplier, Map<String, Channel> clientIdToChannel,
-                                 WillStore willStore, HookManager hookManager, Supplier<MqttProperties> propsSupplier) {
+                                 WillStore willStore, HookManager hookManager, Supplier<MqttProperties> propsSupplier,
+                                 PersistenceService persistence) {
         this.sessionPresentSupplier = sessionPresentSupplier != null ? sessionPresentSupplier : () -> false;
         this.clientIdToChannel = clientIdToChannel;
         this.willStore = willStore;
         this.hookManager = hookManager;
         this.propsSupplier = propsSupplier;
+        this.persistence = persistence;
     }
 
     @Override
@@ -53,6 +57,8 @@ public class ConnectMessageHandler implements MqttMessageHandler {
         MqttConnectMessage connect = (MqttConnectMessage) msg;
         String clientId = connect.payload().clientIdentifier();
         InetSocketAddress remote = ChannelAttributes.remoteAddress(ctx.channel());
+        boolean cleanSession = connect.variableHeader().isCleanSession();
+        String username = connect.payload().userName();
         log.debug("CONNECT clientId={}", clientId);
 
         int version = connect.variableHeader().version();
@@ -67,12 +73,8 @@ public class ConnectMessageHandler implements MqttMessageHandler {
 
         if (hookManager != null) {
             ConnectContext connectCtx = new ConnectContext(
-                    clientId,
-                    connect.payload().userName(),
-                    connect.payload().passwordInBytes(),
-                    remote,
-                    version,
-                    connect.variableHeader().isCleanSession()
+                    clientId, username, connect.payload().passwordInBytes(),
+                    remote, version, cleanSession
             );
             AuthResult result = hookManager.authenticate(connectCtx);
             if (!result.accepted()) {
@@ -105,12 +107,17 @@ public class ConnectMessageHandler implements MqttMessageHandler {
         ctx.channel().writeAndFlush(MqttResponses.connAck(sessionPresent));
 
         if (hookManager != null) hookManager.fireClientConnected(clientId, remote);
+
+        if (persistence != null && clientId != null && !clientId.isEmpty()) {
+            if (cleanSession) {
+                persistence.deleteAllSubscriptionsAsync(clientId);
+                persistence.deleteSessionAsync(clientId);
+            } else {
+                persistence.saveSessionAsync(clientId, username, false);
+            }
+        }
     }
 
-    /**
-     * 将 pipeline 中的连接超时 IdleStateHandler 替换为基于 MQTT keepalive 的空闲检测。
-     * MQTT-3.1.2-24: 服务端在 1.5 倍 keepalive 时间内未收到任何报文须断开。
-     */
     private void replaceIdleHandler(ChannelHandlerContext ctx, int clientKeepalive) {
         MqttProperties props = propsSupplier != null ? propsSupplier.get() : null;
         int idleSeconds = props != null ? props.resolveIdleSeconds(clientKeepalive) : 0;
@@ -123,8 +130,6 @@ public class ConnectMessageHandler implements MqttMessageHandler {
             pipeline.addBefore(ctx.name(), MqttServer.IDLE_HANDLER_NAME,
                     new IdleStateHandler(idleSeconds, 0, 0, TimeUnit.SECONDS));
             log.debug("Keepalive: client={}s -> idle={}s", clientKeepalive, idleSeconds);
-        } else {
-            log.debug("Keepalive: disabled (client={}s)", clientKeepalive);
         }
     }
 }
