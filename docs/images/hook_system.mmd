@@ -1,0 +1,16 @@
+graph LR
+    subgraph "认证 Hook（必选）"
+        A1[auth-url HTTP] -->|优先| R[AuthResult]
+        A2[Spring Bean] -->|次选| R
+        A3[DefaultAuthHook<br/>放行所有] -->|兜底| R
+    end
+
+    subgraph "事件 Hook（可选）"
+        E1[event-url HTTP]
+        E2[Spring Bean]
+        E1 & E2 -->|合并| F[fire-and-forget]
+    end
+
+    subgraph "执行方式"
+        F --> VT[虚拟线程<br/>不阻塞 EventLoop]
+    end

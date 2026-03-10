@@ -25,6 +25,7 @@ declare -A diagrams=(
     ["architecture"]="整体架构"
     ["connect_auth"]="连接与认证流程"
     ["pub_sub"]="发布与订阅流程"
+    ["hook_system"]="Hook系统"
 )
 
 # 生成图片

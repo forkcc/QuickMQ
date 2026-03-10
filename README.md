@@ -215,24 +215,32 @@ sequenceDiagram
 
 ## Hook 系统
 
+![Hook系统](https://mermaid.ink/svg/Z3JhcGggTFIKICAgIHN1YmdyYXBoICLorqTor4EgSG9va%2B%2B8iOW%2FhemAie%2B%2B8iSIKICAgICAgICBBMVthdXRoLXVybCBIVFRQXSAtLT585LyY5YWIfCBSW0F1dGhSZXN1bHRdCiAgICAgICAgQTJbU3ByaW5nIEJlYW5dIC0tPnzmrKHpgIl8IFIKICAgICAgICBBM1tEZWZhdWx0QXV0aEhvb2s8YnIvPuaUvuihjOaJgOaciVdIC0tPnzlhZzlupV8IFIKICAgIGVuZAoKICAgIHN1YmdyYXBoICLk%2Bovku7YgSG9va%2B%2B8iOWPr%2BmAie%2B8iSIKICAgICAgICBFMVtldmVudC11cmwgSFRUUF0KICAgICAgICBFMltTcHJpbmcgQmVhbl0KICAgICAgICBFMSAmIEUyIC0tPnzlkIjlubZ8IEZbZmlyZS1hbmQtZm9yZ2V0XQogICAgZW5kCgogICAgc3ViZ3JhcGggIuaJp%2BihjOaWueW8jyIKICAgICAgICBGIC0tPiBWVFvomZrmi5%2Fnur%2FnqIs8YnIvPuS4jemYu%2BWhniBFdmVudExvb3BdCiAgICBlbmQK)
+
+> **生成图片**：运行 `./generate-diagrams.sh` 生成 SVG/PNG 图片。如果图片未生成，可使用下面的 Mermaid 代码在线渲染。
+
+<details>
+<summary>点击查看 Mermaid 源代码</summary>
+
 ```mermaid
 graph LR
-    subgraph 认证 Hook（必选）
+    subgraph "认证 Hook（必选）"
         A1[auth-url HTTP] -->|优先| R[AuthResult]
         A2[Spring Bean] -->|次选| R
         A3[DefaultAuthHook<br/>放行所有] -->|兜底| R
     end
 
-    subgraph 事件 Hook（可选）
+    subgraph "事件 Hook（可选）"
         E1[event-url HTTP]
         E2[Spring Bean]
         E1 & E2 -->|合并| F[fire-and-forget]
     end
 
-    subgraph 执行方式
+    subgraph "执行方式"
         F --> VT[虚拟线程<br/>不阻塞 EventLoop]
     end
 ```
+</details>
 
 **认证请求/响应示例**：
 
