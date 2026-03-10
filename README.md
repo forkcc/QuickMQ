@@ -19,7 +19,7 @@
 - **动态 Keepalive**：客户端 keepalive × 1.5 做空闲检测，支持服务端默认值与上限
 - **HAProxy PROXY Protocol**：可选开启，透传真实客户端 IP
 - **认证与审计 Hook**：HTTP Webhook（虚拟线程）或 Spring Bean，留空放行所有
-- **数据持久化**：HSQLDB + JPA + QueryDSL，会话/订阅/保留消息/QoS 2 消息状态重启不丢
+- **数据持久化**：H2 + JPA + QueryDSL，会话/订阅/保留消息/QoS 2 消息状态重启不丢
 - **百万连接优化**：Epoll、4KB Socket 缓冲、Recycler 对象池、Trie 订阅索引、write/flush 分离与背压
 - **容器化部署**：Dockerfile 多阶段构建、docker-compose 一键启动
 
@@ -32,7 +32,7 @@
 | JDK 21 | 虚拟线程用于 Hook HTTP 调用与 JPA 阻塞 IO |
 | Spring Boot 3.2 | 无 Web 容器，纯后端服务 |
 | Netty 4.x | TCP + WebSocket，Linux 自动 Epoll，SSL/TLS 支持 |
-| HSQLDB | 嵌入式数据库，纯内存模式推荐 |
+| H2 | 嵌入式数据库，纯内存模式推荐 |
 | JPA + QueryDSL | 会话 / 订阅 / 保留消息 / QoS 2 状态持久化 |
 
 ---
@@ -66,7 +66,7 @@
 
 ## 整体架构
 
-![整体架构](https://mermaid.ink/svg/Z3JhcGggVEIKICAgIHN1YmdyYXBoIOWuouaIt%2BerrwogICAgICAgIEMxW01RVFQgQ2xpZW50IDFdCiAgICAgICAgQzJbTVFUVCBDbGllbnQgMl0KICAgICAgICBDTltNUVRUIENsaWVudCBOXQogICAgZW5kCgogICAgc3ViZ3JhcGggUXVpY2tNUSBCcm9rZXIKICAgICAgICBzdWJncmFwaCBOZXR0eSDkvKDovpPlsYIKICAgICAgICAgICAgVENQW1RDUCA6MTg4M10KICAgICAgICAgICAgV1NbV2ViU29ja2V0IDo4MDgzXQogICAgICAgICAgICBQUHtQUk9YWSBQcm90b2NvbD99CiAgICAgICAgZW5kCgogICAgICAgIHN1YmdyYXBoIOWNj%2BiuruWkhOeQhgogICAgICAgICAgICBERUNbTXF0dERlY29kZXIgLyBNcXR0RW5jb2Rlcl0KICAgICAgICAgICAgSURMRVtJZGxlU3RhdGVIYW5kbGVyPGJyLz7liqjmgIEgS2VlcGFsaXZlXQogICAgICAgICAgICBCSFtNcXR0QnJva2VySGFuZGxlcjxici8%2B5raI5oGv57G75Z6L5YiG5Y%2BRXQogICAgICAgIGVuZAoKICAgICAgICBzdWJncmFwaCDkuJrliqHlsYIKICAgICAgICAgICAgQ09OTltDb25uZWN0SGFuZGxlcjxici8%2B6K6k6K%2BBICsg5Lya6K%2BdXQogICAgICAgICAgICBQVUJbUHVibGlzaEhhbmRsZXI8YnIvPndyaXRlL2ZsdXNoIOWIhuemu10KICAgICAgICAgICAgU1VCW1N1YnNjcmliZUhhbmRsZXJdCiAgICAgICAgICAgIFVOU1VCW1Vuc3Vic2NyaWJlSGFuZGxlcl0KICAgICAgICAgICAgRElTQ1tEaXNjb25uZWN0SGFuZGxlcl0KICAgICAgICBlbmQKCiAgICAgICAgc3ViZ3JhcGgg5a2Y5YKo5bGCCiAgICAgICAgICAgIFRSSUVbKFN1YnNjcmlwdGlvblRyaWU8YnIvPuWGheWtmCBUcmllIOe0ouW8lSldCiAgICAgICAgICAgIFJFVFsoUmV0YWluZWRTdG9yZTxici8%2BVHJpZSDntKLlvJUpXQogICAgICAgICAgICBXSUxMWyhXaWxsU3RvcmUpXQogICAgICAgICAgICBEQlsoSFNRTERCPGJyLz5KUEEg5oyB5LmF5YyWKV0KICAgICAgICBlbmQKCiAgICAgICAgc3ViZ3JhcGggSG9vayDlsYIKICAgICAgICAgICAgSE1bSG9va01hbmFnZXJdCiAgICAgICAgICAgIEFVVEh7YXV0aC11cmw%2FfQogICAgICAgICAgICBFVlR7ZXZlbnQtdXJsP30KICAgICAgICAgICAgVlRb6Jma5ouf57q%2F56iLIEV4ZWN1dG9yXQogICAgICAgIGVuZAogICAgZW5kCgogICAgQzEgJiBDMiAmIENOIC0tPiBUQ1AgJiBXUwogICAgVENQICYgV1MgLS0%2BIFBQIC0tPiBERUMgLS0%2BIElETEUgLS0%2BIEJICiAgICBCSCAtLT4gQ09OTiAmIFBVQiAmIFNVQiAmIFVOU1VCICYgRElTQwogICAgQ09OTiAtLT4gSE0gLS0%2BIEFVVEggLS0%2BIFZUCiAgICBQVUIgLS0%2BIFRSSUUgJiBSRVQKICAgIFNVQiAtLT4gVFJJRSAmIFJFVAogICAgQ09OTiAmIERJU0MgLS0%2BIFdJTEwKICAgIENPTk4gJiBTVUIgLS0%2BIERCCiAgICBITSAtLT4gRVZUIC0tPiBWVAo%3D)
+![整体架构](https://mermaid.ink/svg/JSV7aW5pdDogeyd0aGVtZSc6ICdkYXJrJ319JSUKZ3JhcGggVEIKICAgIHN1YmdyYXBoIOWuouaIt%2BerrwogICAgICAgIEMxW01RVFQgQ2xpZW50IDFdCiAgICAgICAgQzJbTVFUVCBDbGllbnQgMl0KICAgICAgICBDTltNUVRUIENsaWVudCBOXQogICAgZW5kCgogICAgc3ViZ3JhcGggUXVpY2tNUSBCcm9rZXIKICAgICAgICBzdWJncmFwaCBOZXR0eSDkvKDovpPlsYIKICAgICAgICAgICAgVENQW1RDUCA6MTg4M10KICAgICAgICAgICAgV1NbV2ViU29ja2V0IDo4MDgzXQogICAgICAgICAgICBQUHtQUk9YWSBQcm90b2NvbD99CiAgICAgICAgZW5kCgogICAgICAgIHN1YmdyYXBoIOWNj%2BiuruWkhOeQhgogICAgICAgICAgICBERUNbTXF0dERlY29kZXIgLyBNcXR0RW5jb2Rlcl0KICAgICAgICAgICAgSURMRVtJZGxlU3RhdGVIYW5kbGVyPGJyLz7liqjmgIEgS2VlcGFsaXZlXQogICAgICAgICAgICBCSFtNcXR0QnJva2VySGFuZGxlcjxici8%2B5raI5oGv57G75Z6L5YiG5Y%2BRXQogICAgICAgIGVuZAoKICAgICAgICBzdWJncmFwaCDkuJrliqHlsYIKICAgICAgICAgICAgQ09OTltDb25uZWN0SGFuZGxlcjxici8%2B6K6k6K%2BBICsg5Lya6K%2BdXQogICAgICAgICAgICBQVUJbUHVibGlzaEhhbmRsZXI8YnIvPndyaXRlL2ZsdXNoIOWIhuemu10KICAgICAgICAgICAgU1VCW1N1YnNjcmliZUhhbmRsZXJdCiAgICAgICAgICAgIFVOU1VCW1Vuc3Vic2NyaWJlSGFuZGxlcl0KICAgICAgICAgICAgRElTQ1tEaXNjb25uZWN0SGFuZGxlcl0KICAgICAgICBlbmQKCiAgICAgICAgc3ViZ3JhcGgg5a2Y5YKo5bGCCiAgICAgICAgICAgIFRSSUVbKFN1YnNjcmlwdGlvblRyaWU8YnIvPuWGheWtmCBUcmllIOe0ouW8lSldCiAgICAgICAgICAgIFJFVFsoUmV0YWluZWRTdG9yZTxici8%2BVHJpZSDntKLlvJUpXQogICAgICAgICAgICBXSUxMWyhXaWxsU3RvcmUpXQogICAgICAgICAgICBEQlsoSDI8YnIvPkpQQSDmjIHkuYXljJYpXQogICAgICAgIGVuZAoKICAgICAgICBzdWJncmFwaCBIb29rIOWxggogICAgICAgICAgICBITVtIb29rTWFuYWdlcl0KICAgICAgICAgICAgQVVUSHthdXRoLXVybD99CiAgICAgICAgICAgIEVWVHtldmVudC11cmw%2FfQogICAgICAgICAgICBWVFvomZrmi5%2Fnur%2FnqIsgRXhlY3V0b3JdCiAgICAgICAgZW5kCiAgICBlbmQKCiAgICBDMSAmIEMyICYgQ04gLS0%2BIFRDUCAmIFdTCiAgICBUQ1AgJiBXUyAtLT4gUFAgLS0%2BIERFQyAtLT4gSURMRSAtLT4gQkgKICAgIEJIIC0tPiBDT05OICYgUFVCICYgU1VCICYgVU5TVUIgJiBESVNDCiAgICBDT05OIC0tPiBITSAtLT4gQVVUSCAtLT4gVlQKICAgIFBVQiAtLT4gVFJJRSAmIFJFVAogICAgU1VCIC0tPiBUUklFICYgUkVUCiAgICBDT05OICYgRElTQyAtLT4gV0lMTAogICAgQ09OTiAmIFNVQiAtLT4gREIKICAgIEhNIC0tPiBFVlQgLS0%2BIFZUCg%3D%3D)
 
 > **生成图片**：运行 `./generate-diagrams.sh` 生成 SVG/PNG 图片。如果图片未生成，可使用下面的 Mermaid 代码在线渲染。
 
@@ -106,7 +106,7 @@ graph TB
             TRIE[(SubscriptionTrie<br/>内存 Trie 索引)]
             RET[(RetainedStore<br/>Trie 索引)]
             WILL[(WillStore)]
-            DB[(HSQLDB<br/>JPA 持久化)]
+            DB[(H2<br/>JPA 持久化)]
         end
 
         subgraph Hook 层
@@ -133,7 +133,7 @@ graph TB
 
 ## 连接与认证流程
 
-![连接与认证流程](https://mermaid.ink/svg/c2VxdWVuY2VEaWFncmFtCiAgICBwYXJ0aWNpcGFudCBDIGFzIE1RVFQgQ2xpZW50CiAgICBwYXJ0aWNpcGFudCBOIGFzIE5ldHR5IFBpcGVsaW5lCiAgICBwYXJ0aWNpcGFudCBIIGFzIENvbm5lY3RIYW5kbGVyCiAgICBwYXJ0aWNpcGFudCBITSBhcyBIb29rTWFuYWdlcgogICAgcGFydGljaXBhbnQgREIgYXMgSFNRTERCCgogICAgQy0%2BPk46IFRDUC9XZWJTb2NrZXQg6L%2Be5o6lCiAgICBOb3RlIG92ZXIgTjogUFJPWFkgUHJvdG9jb2zvvIjlj6%2FpgInvvIkKICAgIE4tPj5OOiBJZGxlU3RhdGVIYW5kbGVy77yIY29ubmVjdC10aW1lb3V077yJCiAgICBDLT4%2BTjogQ09OTkVDVCDmiqXmlocKICAgIE4tPj5IOiBjaGFubmVsUmVhZChDT05ORUNUKQogICAgSC0%2BPkhNOiBhdXRoZW50aWNhdGUoQ29ubmVjdENvbnRleHQpCiAgICBhbHQgYXV0aC11cmwg5bey6YWN572uCiAgICAgICAgSE0tPj5ITTogSFRUUCBQT1NU77yI6Jma5ouf57q%2F56iL77yJCiAgICBlbHNlIFNwcmluZyBCZWFuCiAgICAgICAgSE0tPj5ITTogQmVhbi5hdXRoZW50aWNhdGUoKQogICAgZWxzZSDpu5jorqQKICAgICAgICBITS0%2BPkhNOiBBbGxvd0FsbAogICAgZW5kCiAgICBITS0tPj5IOiBBdXRoUmVzdWx0CiAgICBhbHQg6K6k6K%2BB6YCa6L%2BHCiAgICAgICAgSC0%2BPkRCOiDkv53lrZgv5pu05pawIENsaWVudFNlc3Npb24KICAgICAgICBILT4%2BTjog5pu%2F5o2iIElkbGVIYW5kbGVy77yIa2VlcGFsaXZlw5cxLjXvvIkKICAgICAgICBILS0%2BPkM6IENPTk5BQ0soYWNjZXB0ZWQpCiAgICBlbHNlIOiupOivgeaLkue7nQogICAgICAgIEgtLT4%2BQzogQ09OTkFDSyhyZWplY3RlZCkKICAgICAgICBILT4%2BTjogY2xvc2UoKQogICAgZW5kCg%3D%3D)
+![连接与认证流程](https://mermaid.ink/svg/JSV7aW5pdDogeyd0aGVtZSc6ICdkYXJrJ319JSUKc2VxdWVuY2VEaWFncmFtCiAgICBwYXJ0aWNpcGFudCBDIGFzIE1RVFQgQ2xpZW50CiAgICBwYXJ0aWNpcGFudCBOIGFzIE5ldHR5IFBpcGVsaW5lCiAgICBwYXJ0aWNpcGFudCBIIGFzIENvbm5lY3RIYW5kbGVyCiAgICBwYXJ0aWNpcGFudCBITSBhcyBIb29rTWFuYWdlcgogICAgcGFydGljaXBhbnQgREIgYXMgSDIKCiAgICBDLT4%2BTjogVENQL1dlYlNvY2tldCDov57mjqUKICAgIE5vdGUgb3ZlciBOOiBQUk9YWSBQcm90b2NvbO%2B8iOWPr%2BmAie%2B8iQogICAgTi0%2BPk46IElkbGVTdGF0ZUhhbmRsZXLvvIhjb25uZWN0LXRpbWVvdXTvvIkKICAgIEMtPj5OOiBDT05ORUNUIOaKpeaWhwogICAgTi0%2BPkg6IGNoYW5uZWxSZWFkKENPTk5FQ1QpCiAgICBILT4%2BSE06IGF1dGhlbnRpY2F0ZShDb25uZWN0Q29udGV4dCkKICAgIGFsdCBhdXRoLXVybCDlt7LphY3nva4KICAgICAgICBITS0%2BPkhNOiBIVFRQIFBPU1TvvIjomZrmi5%2Fnur%2FnqIvvvIkKICAgIGVsc2UgU3ByaW5nIEJlYW4KICAgICAgICBITS0%2BPkhNOiBCZWFuLmF1dGhlbnRpY2F0ZSgpCiAgICBlbHNlIOm7mOiupAogICAgICAgIEhNLT4%2BSE06IEFsbG93QWxsCiAgICBlbmQKICAgIEhNLS0%2BPkg6IEF1dGhSZXN1bHQKICAgIGFsdCDorqTor4HpgJrov4cKICAgICAgICBILT4%2BREI6IOS%2FneWtmC%2Fmm7TmlrAgQ2xpZW50U2Vzc2lvbgogICAgICAgIEgtPj5OOiDmm7%2FmjaIgSWRsZUhhbmRsZXLvvIhrZWVwYWxpdmXDlzEuNe%2B8iQogICAgICAgIEgtLT4%2BQzogQ09OTkFDSyhhY2NlcHRlZCkKICAgIGVsc2Ug6K6k6K%2BB5ouS57udCiAgICAgICAgSC0tPj5DOiBDT05OQUNLKHJlamVjdGVkKQogICAgICAgIEgtPj5OOiBjbG9zZSgpCiAgICBlbmQK)
 
 > **生成图片**：运行 `./generate-diagrams.sh` 生成 SVG/PNG 图片。如果图片未生成，可使用下面的 Mermaid 代码在线渲染。
 
@@ -146,7 +146,7 @@ sequenceDiagram
     participant N as Netty Pipeline
     participant H as ConnectHandler
     participant HM as HookManager
-    participant DB as HSQLDB
+    participant DB as H2
 
     C->>N: TCP/WebSocket 连接
     Note over N: PROXY Protocol（可选）
@@ -177,7 +177,7 @@ sequenceDiagram
 
 ## 发布与订阅流程
 
-![发布与订阅流程](https://mermaid.ink/svg/c2VxdWVuY2VEaWFncmFtCiAgICBwYXJ0aWNpcGFudCBQIGFzIFB1Ymxpc2hlcgogICAgcGFydGljaXBhbnQgQiBhcyBCcm9rZXIKICAgIHBhcnRpY2lwYW50IFQgYXMgU3Vic2NyaXB0aW9uVHJpZQogICAgcGFydGljaXBhbnQgUzEgYXMgU3Vic2NyaWJlciAxCiAgICBwYXJ0aWNpcGFudCBTMiBhcyBTdWJzY3JpYmVyIDIKCiAgICBOb3RlIG92ZXIgUCxTMjog6K6i6ZiF6Zi25q61CiAgICBTMS0%2BPkI6IFNVQlNDUklCRSAic2Vuc29yLyMiIFFvUyAxCiAgICBTMi0%2BPkI6IFNVQlNDUklCRSAic2Vuc29yL3RlbXAiIFFvUyAwCiAgICBCLT4%2BVDogdHJpZS5zdWJzY3JpYmUoZmlsdGVyLCBjaGFubmVsLCBxb3MpCiAgICBCLS0%2BPlMxOiBTVUJBQ0sKICAgIEItLT4%2BUzI6IFNVQkFDSwoKICAgIE5vdGUgb3ZlciBQLFMyOiDlj5HluIPpmLbmrrUKICAgIFAtPj5COiBQVUJMSVNIICJzZW5zb3IvdGVtcCIgUW9TIDEKICAgIEItPj5COiBQVUJBQ0sg4oaSIFB1Ymxpc2hlcgogICAgQi0%2BPlQ6IGNvbGxlY3RTdWJzY3JpYmVycygic2Vuc29yL3RlbXAiKQogICAgVC0tPj5COiBbUzEoUW9TMSksIFMyKFFvUzApXQogICAgTm90ZSBvdmVyIEI6IHdyaXRlIOWIhuemu%2B%2B8mk7Dl3dyaXRlICsgMcOXZmx1c2gKICAgIEItPj5TMTogUFVCTElTSCAoUW9TIDEpCiAgICBCLT4%2BUzI6IFBVQkxJU0ggKFFvUyAwKQogICAgTm90ZSBvdmVyIEI6IGlzV3JpdGFibGUoKSDog4zljovmo4Dmn6U8YnIvPuaFoua2iOi0ueiAhei3s%2Bi%2Fhwo%3D)
+![发布与订阅流程](https://mermaid.ink/svg/JSV7aW5pdDogeyd0aGVtZSc6ICdkYXJrJ319JSUKc2VxdWVuY2VEaWFncmFtCiAgICBwYXJ0aWNpcGFudCBQIGFzIFB1Ymxpc2hlcgogICAgcGFydGljaXBhbnQgQiBhcyBCcm9rZXIKICAgIHBhcnRpY2lwYW50IFQgYXMgU3Vic2NyaXB0aW9uVHJpZQogICAgcGFydGljaXBhbnQgUzEgYXMgU3Vic2NyaWJlciAxCiAgICBwYXJ0aWNpcGFudCBTMiBhcyBTdWJzY3JpYmVyIDIKCiAgICBOb3RlIG92ZXIgUCxTMjog6K6i6ZiF6Zi25q61CiAgICBTMS0%2BPkI6IFNVQlNDUklCRSAic2Vuc29yLyMiIFFvUyAxCiAgICBTMi0%2BPkI6IFNVQlNDUklCRSAic2Vuc29yL3RlbXAiIFFvUyAwCiAgICBCLT4%2BVDogdHJpZS5zdWJzY3JpYmUoZmlsdGVyLCBjaGFubmVsLCBxb3MpCiAgICBCLS0%2BPlMxOiBTVUJBQ0sKICAgIEItLT4%2BUzI6IFNVQkFDSwoKICAgIE5vdGUgb3ZlciBQLFMyOiDlj5HluIPpmLbmrrUKICAgIFAtPj5COiBQVUJMSVNIICJzZW5zb3IvdGVtcCIgUW9TIDEKICAgIEItPj5COiBQVUJBQ0sg4oaSIFB1Ymxpc2hlcgogICAgQi0%2BPlQ6IGNvbGxlY3RTdWJzY3JpYmVycygic2Vuc29yL3RlbXAiKQogICAgVC0tPj5COiBbUzEoUW9TMSksIFMyKFFvUzApXQogICAgTm90ZSBvdmVyIEI6IHdyaXRlIOWIhuemu%2B%2B8mk7Dl3dyaXRlICsgMcOXZmx1c2gKICAgIEItPj5TMTogUFVCTElTSCAoUW9TIDEpCiAgICBCLT4%2BUzI6IFBVQkxJU0ggKFFvUyAwKQogICAgTm90ZSBvdmVyIEI6IGlzV3JpdGFibGUoKSDog4zljovmo4Dmn6U8YnIvPuaFoua2iOi0ueiAhei3s%2Bi%2Fhwo%3D)
 
 > **生成图片**：运行 `./generate-diagrams.sh` 生成 SVG/PNG 图片。如果图片未生成，可使用下面的 Mermaid 代码在线渲染。
 
@@ -215,7 +215,7 @@ sequenceDiagram
 
 ## Hook 系统
 
-![Hook系统](https://mermaid.ink/svg/Z3JhcGggTFIKICAgIHN1YmdyYXBoICLorqTor4EgSG9va%2B%2B8iOW%2FhemAie%2B%2B8iSIKICAgICAgICBBMVthdXRoLXVybCBIVFRQXSAtLT585LyY5YWIfCBSW0F1dGhSZXN1bHRdCiAgICAgICAgQTJbU3ByaW5nIEJlYW5dIC0tPnzmrKHpgIl8IFIKICAgICAgICBBM1tEZWZhdWx0QXV0aEhvb2s8YnIvPuaUvuihjOaJgOaciVdIC0tPnzlhZzlupV8IFIKICAgIGVuZAoKICAgIHN1YmdyYXBoICLk%2Bovku7YgSG9va%2B%2B8iOWPr%2BmAie%2B8iSIKICAgICAgICBFMVtldmVudC11cmwgSFRUUF0KICAgICAgICBFMltTcHJpbmcgQmVhbl0KICAgICAgICBFMSAmIEUyIC0tPnzlkIjlubZ8IEZbZmlyZS1hbmQtZm9yZ2V0XQogICAgZW5kCgogICAgc3ViZ3JhcGggIuaJp%2BihjOaWueW8jyIKICAgICAgICBGIC0tPiBWVFvomZrmi5%2Fnur%2FnqIs8YnIvPuS4jemYu%2BWhniBFdmVudExvb3BdCiAgICBlbmQK)
+![Hook系统](https://mermaid.ink/svg/JSV7aW5pdDogeyd0aGVtZSc6ICdkYXJrJ319JSUKZ3JhcGggTFIKICAgIHN1YmdyYXBoICLorqTor4EgSG9va%2B%2B8iOW%2FhemAie%2B8iSIKICAgICAgICBBMVthdXRoLXVybCBIVFRQXSAtLT585LyY5YWIfCBSW0F1dGhSZXN1bHRdCiAgICAgICAgQTJbU3ByaW5nIEJlYW5dIC0tPnzmrKHpgIl8IFIKICAgICAgICBBM1tEZWZhdWx0QXV0aEhvb2s8YnIvPuaUvuihjOaJgOaciV0gLS0%2BfOWFnOW6lXwgUgogICAgZW5kCgogICAgc3ViZ3JhcGggIuS6i%2BS7tiBIb29r77yI5Y%2Bv6YCJ77yJIgogICAgICAgIEUxW2V2ZW50LXVybCBIVFRQXQogICAgICAgIEUyW1NwcmluZyBCZWFuXQogICAgICAgIEUxICYgRTIgLS0%2BfOWQiOW5tnwgRltmaXJlLWFuZC1mb3JnZXRdCiAgICBlbmQKCiAgICBzdWJncmFwaCAi5omn6KGM5pa55byPIgogICAgICAgIEYgLS0%2BIFZUW%2BiZmuaLn%2Be6v%2Beoizxici8%2B5LiN6Zi75aGeIEV2ZW50TG9vcF0KICAgIGVuZAo%3D)
 
 > **生成图片**：运行 `./generate-diagrams.sh` 生成 SVG/PNG 图片。如果图片未生成，可使用下面的 Mermaid 代码在线渲染。
 
@@ -270,7 +270,7 @@ graph LR
 
 ## 数据持久化
 
-使用嵌入式 **HSQLDB**（纯内存模式推荐），通过 JPA + QueryDSL 管理所有 MQTT 状态：
+使用嵌入式 **H2**（纯内存模式推荐），通过 JPA + QueryDSL 管理所有 MQTT 状态：
 
 ### 持久化表结构
 
@@ -291,11 +291,11 @@ QoS 2（恰好一次）需要严格的消息状态跟踪，QuickMQ 实现了完�
 ```yaml
 # 纯内存模式（推荐生产使用，重启丢失数据）
 # 适用于无状态集群部署，依赖客户端重连恢复
-url: jdbc:hsqldb:mem:quickmq
+url: jdbc:h2:mem:quickmq
 
 # 文件持久化模式（单机部署）
 # 数据文件位于 ./data/quickmq.*，重启不丢失
-url: jdbc:hsqldb:file:./data/quickmq;shutdown=true
+url: jdbc:h2:file:./data/quickmq
 ```
 
 ### 会话与消息过期
@@ -404,7 +404,7 @@ sudo cp deploy/limits.conf /etc/security/limits.d/99-quickmq.conf
 ### 数据库
 | 配置项 | 说明 | 默认值 |
 |--------|------|--------|
-| `spring.datasource.url` | HSQLDB 连接串（推荐 mem 模式） | `jdbc:hsqldb:mem:quickmq` |
+| `spring.datasource.url` | H2 连接串（推荐 mem 模式） | `jdbc:h2:mem:quickmq` |
 
 ---
 
@@ -485,7 +485,7 @@ QuickMQ/
 | **TLS/SSL 支持** | 8+ | SSL 上下文创建，加密连接建立 |
 | **会话管理** | 12+ | 会话持久化、恢复、过期清理 |
 | **主题验证** | 10+ | 主题名规范、通配符合法性检查 |
-| **存储层** | 20+ | HSQLDB JPA 实体持久化，包括 QoS 2 消息状态 |
+| **存储层** | 20+ | H2 JPA 实体持久化，包括 QoS 2 消息状态 |
 | **Hook 系统** | 10+ | 认证、ACL、事件 Hook 集成 |
 | **订阅管理** | 25+ | Trie 索引、通配符匹配、订阅恢复 |
 | **系统集成** | 5+ | 端到端客户端-服务器交互测试 |

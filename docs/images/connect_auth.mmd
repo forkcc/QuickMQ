@@ -1,9 +1,10 @@
+%%{init: {'theme': 'dark'}}%%
 sequenceDiagram
     participant C as MQTT Client
     participant N as Netty Pipeline
     participant H as ConnectHandler
     participant HM as HookManager
-    participant DB as HSQLDB
+    participant DB as H2
 
     C->>N: TCP/WebSocket 连接
     Note over N: PROXY Protocol（可选）

@@ -2,11 +2,11 @@ spring:
   main:
     web-application-type: none
 
-  # ---------- HSQLDB ----------
+  # ---------- H2 ----------
   datasource:
     # file: 模式持久化到磁盘，重启不丢数据；换 mem: 则纯内存
-    url: jdbc:hsqldb:mem:quickmq
-    driver-class-name: org.hsqldb.jdbc.JDBCDriver
+    url: jdbc:h2:mem:quickmq
+    driver-class-name: org.h2.Driver
     username: sa
     password: ""
     hikari:
@@ -19,8 +19,8 @@ spring:
       ddl-auto: update
     open-in-view: false
     properties:
-      hibernate:
-        dialect: org.hibernate.dialect.HSQLDialect
+       hibernate:
+        dialect: org.hibernate.dialect.H2Dialect
         format_sql: false
         jdbc:
           batch_size: 50

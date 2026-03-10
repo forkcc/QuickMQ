@@ -29,6 +29,7 @@ declare -A diagrams=(
 )
 
 # 生成图片
+export PUPPETEER_SANDBOX=0
 for key in "${!diagrams[@]}"; do
     input="$IMAGES_DIR/$key.mmd"
     output_svg="$IMAGES_DIR/$key.svg"

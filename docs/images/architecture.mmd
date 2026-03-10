@@ -1,3 +1,4 @@
+%%{init: {'theme': 'dark'}}%%
 graph TB
     subgraph 客户端
         C1[MQTT Client 1]
@@ -30,7 +31,7 @@ graph TB
             TRIE[(SubscriptionTrie<br/>内存 Trie 索引)]
             RET[(RetainedStore<br/>Trie 索引)]
             WILL[(WillStore)]
-            DB[(HSQLDB<br/>JPA 持久化)]
+            DB[(H2<br/>JPA 持久化)]
         end
 
         subgraph Hook 层

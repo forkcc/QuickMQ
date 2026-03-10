@@ -2,8 +2,8 @@ spring:
   main:
     web-application-type: none
   datasource:
-    url: jdbc:hsqldb:mem:testdb
-    driver-class-name: org.hsqldb.jdbc.JDBCDriver
+    url: jdbc:h2:mem:testdb
+    driver-class-name: org.h2.Driver
     username: sa
     password: ""
   jpa:
@@ -12,7 +12,7 @@ spring:
     open-in-view: false
     properties:
       hibernate:
-        dialect: org.hibernate.dialect.HSQLDialect
+         dialect: org.hibernate.dialect.H2Dialect
 
 mqtt:
   tcp-ports: [ 1893 ]
